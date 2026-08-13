@@ -60,7 +60,6 @@ xai-file-utils = { path = "../xai-file-utils" }
 whoami = { workspace = true }
 uuid = { workspace = true, features = ["v5", "v7"] }
 obfstr = { workspace = true, optional = true }
-mid = "4.0.0"
 tokio = { workspace = true, features = ["macros", "sync", "rt", "time"] }
 parking_lot = { workspace = true }
 xai-grok-auth = { workspace = true }
@@ -90,6 +89,11 @@ async-trait = { workspace = true }
 futures-executor = "0.3"
 tokio-stream = { workspace = true }
 tracing-opentelemetry = { workspace = true }
+
+# `mid` has no Android backend. Termux uses the cache-backed fallback in
+# `id.rs`, which avoids making telemetry a build blocker on Android.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+mid = "4.0.0"
 
 [dev-dependencies]
 # Pre-main unified-log redirect for this crate's own test binary.

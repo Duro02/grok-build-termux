@@ -36,6 +36,30 @@ const CREDENTIAL_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_
 /// every other session blocked indefinitely on the same server's auth.
 const BROWSER_AUTH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
 
+/// Open an OAuth URL through the native desktop opener or Termux's Android
+/// activity bridge.
+fn open_browser_url(url: &str) -> std::io::Result<()> {
+    #[cfg(target_os = "android")]
+    {
+        let status = std::process::Command::new("termux-open-url")
+            .arg(url)
+            .status()?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "termux-open-url returned a failure status",
+            ))
+        }
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
+        webbrowser::open(url)
+    }
+}
+
 /// How long a follower waits for the cross-process auth lock before giving up
 /// on dedup and proceeding with its own flow. Slightly above
 /// [`BROWSER_AUTH_TIMEOUT`] so a legitimately-slow leader (user reading the
@@ -384,7 +408,7 @@ async fn run_browser_auth_flow(
 
     // 4. Open browser for user consent.
     tracing::info!(server = server_name, "Opening browser for OAuth consent");
-    if let Err(e) = webbrowser::open(&auth_url) {
+    if let Err(e) = open_browser_url(&auth_url) {
         // eprintln! corrupts the TUI alternate screen (in-process, fd 2).
         // TODO: surface auth URL via ACP notification instead.
         tracing::warn!(%e, url = %auth_url, "Failed to open browser for MCP OAuth; user must visit URL manually");

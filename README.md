@@ -78,6 +78,17 @@ cargo build -p xai-grok-pager-bin --release  # release binary: target/release/xa
 cargo check -p xai-grok-pager-bin            # fast validation
 ```
 
+### Termux / Android
+
+The TUI also has a native Termux build path. Install the Termux prerequisites
+and run [`scripts/build-termux.sh`](scripts/build-termux.sh); Android-specific
+clipboard, audio, sandbox, and process-wait behavior is documented in
+[`TERMUX.md`](TERMUX.md).
+
+Pushes to `main` also run the Android NDK cross-build in GitHub Actions. The
+workflow uploads a checksum-protected artifact for device validation before a
+stable Release is published.
+
 The binary artifact is named `xai-grok-pager`; official installs ship it as
 `grok`. On first launch it opens your browser to authenticate — see the
 [authentication guide](crates/codegen/xai-grok-pager/docs/user-guide/02-authentication.md).

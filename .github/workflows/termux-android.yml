@@ -1,0 +1,65 @@
+name: Termux Android build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.cargo/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'crates/**'
+      - 'scripts/**'
+      - 'TERMUX.md'
+      - '.github/workflows/termux-android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ANDROID_NDK_VERSION: '27.2.12479018'
+  ANDROID_API: '24'
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Android SDK tooling
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: sdkmanager --install "ndk;${ANDROID_NDK_VERSION}"
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils clang lld libssl-dev pkg-config protobuf-compiler
+
+      - name: Set up Rust target
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-linux-android
+
+      - name: Build and package Android artifact
+        run: |
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          test -n "$sdk_root"
+          export ANDROID_NDK_HOME="$sdk_root/ndk/${ANDROID_NDK_VERSION}"
+          export ANDROID_NDK_ROOT="$ANDROID_NDK_HOME"
+          test -d "$ANDROID_NDK_HOME"
+          ./scripts/build-termux-ci.sh
+
+      - name: Upload Termux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: grok-termux-aarch64-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14

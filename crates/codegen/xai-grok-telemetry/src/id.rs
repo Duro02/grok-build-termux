@@ -48,6 +48,7 @@ fn load_or_compute_agent_id() -> String {
     // - Linux: /etc/machine-id is shared across containers from the same base
     //   image, so include $HOSTNAME (container/host name) for uniqueness.
     // - Fallback: random UUIDv4 if mid or hostname are unavailable.
+    #[cfg(not(target_os = "android"))]
     let machine_hash = if cfg!(target_os = "linux") {
         match std::env::var("HOSTNAME") {
             Ok(hostname) if !hostname.is_empty() => {
@@ -59,6 +60,16 @@ fn load_or_compute_agent_id() -> String {
     } else {
         mid::get("agent_id").unwrap_or_else(|_| uuid::Uuid::new_v4().to_string())
     };
+
+    // Termux is Android, but the `mid` crate intentionally has no Android
+    // implementation. Prefer values that are commonly stable in Termux and
+    // fall back to a UUID that is persisted in the cache above.
+    #[cfg(target_os = "android")]
+    let machine_hash = ["ANDROID_ID", "HOSTNAME", "TERMUX_VERSION"]
+        .into_iter()
+        .filter_map(|name| std::env::var(name).ok())
+        .find(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let id = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, machine_hash.as_bytes()).to_string();
 
     // Save to cache file with owner-only perms (best effort).

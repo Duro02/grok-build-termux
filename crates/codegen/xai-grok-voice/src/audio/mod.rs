@@ -21,8 +21,8 @@
 //!   subprocess and the in-process fallback;
 //! - Windows → `capture::CaptureHandle` (in-process cpal stream).
 
-// cpal-based capture: the Windows backend, the macOS fallback, and the macOS
-// `__mic-capture` child implementation.
+// cpal-based capture: the Windows and Android backends, the macOS fallback,
+// and the macOS `__mic-capture` child implementation.
 #[cfg(not(target_os = "linux"))]
 mod capture;
 // Wire protocol shared by the `__mic-capture` child (writer, in `capture`)
@@ -33,7 +33,7 @@ mod protocol;
 pub use capture::capture_pcm_for_duration;
 #[cfg(not(target_os = "linux"))]
 pub(crate) use capture::run_capture_child_cli;
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "android"))]
 pub use capture::{CaptureHandle, input_device_info, spawn_pcm_capture};
 
 // Shared PCM-over-pipe plumbing for the two subprocess backends.

@@ -21,6 +21,13 @@ xai-grok-config = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
+
+# nono currently supports Linux and macOS only. Android reports itself as Unix,
+# but its kernel/userspace combination is not a supported nono backend. Keep
+# the dependency out of Android builds so the public sandbox API can fall back
+# to the documented no-op implementation there.
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+nono = { version = "=0.53.0", default-features = false }
 # Pinned exact: the macOS Seatbelt deny precedence (see deny.rs `emit_seatbelt_deny`)
 # depends on nono's observed rule-emission order. A bump can silently change it and
 # re-open the `mv x y && cat y` bypass with `is_applied()` still true, so re-verify
@@ -28,10 +35,9 @@ libc = { workspace = true }
 #
 # Non-optional (not gated on `enforce`): Cargo has no target-conditional features
 # table, so a `dep:nono` reference from the cross-platform `enforce` feature would
-# break feature resolution on non-unix targets (e.g. Windows builds). nono/globset
-# are unix-only here, so they only compile on unix anyway; the enforce *code*
-# stays gated on `cfg(all(feature = "enforce", unix))`.
-nono = { version = "=0.53.0", default-features = false }
+# break feature resolution on non-unix targets (e.g. Windows builds). globset is
+# still used for cross-platform profile validation; the enforce *code* is limited
+# to the Linux/macOS nono backends.
 # globset validates every deny glob on BOTH platforms (so a glob is interpreted
 # identically or rejected identically) and matches them on Linux. Non-optional for
 # the same reason as nono above.
@@ -48,8 +54,8 @@ ignore = { workspace = true }
 default = ["enforce"]
 ## Enable kernel-enforced sandboxing via nono (Landlock/Seatbelt). Marker feature
 ## only: the backing deps (nono/globset) are non-optional unix-only deps (see
-## above), and the enforce code is gated on `cfg(all(feature = "enforce", unix))`.
-## On non-unix targets enabling this feature is a no-op (no kernel sandbox exists).
+## above), and the enforce code is gated on Linux/macOS nono support.
+## On other targets (including Android) enabling this feature is a no-op.
 enforce = []
 
 [dev-dependencies]

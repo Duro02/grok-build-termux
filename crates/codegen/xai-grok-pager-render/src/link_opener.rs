@@ -27,7 +27,11 @@ pub enum OpenUrlResult {
 /// are treated as available at the env level (spawn failure is still
 /// reported by [`open_url`]).
 pub fn browser_open_likely_available_from_env(env: &HashMap<String, String>) -> bool {
-    if cfg!(any(target_os = "macos", target_os = "windows")) {
+    if cfg!(any(
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "android"
+    )) {
         return true;
     }
     // Explicit BROWSER override: allow even without a display server so
@@ -67,7 +71,7 @@ pub fn browser_unavailable_line(url: &str, copied: bool) -> String {
 /// Open a URL in the system's default browser/handler.
 ///
 /// Spawns the platform-native opener (`open` on macOS, `xdg-open` on
-/// Linux, `cmd /c start` on Windows) with fully detached stdio so it
+/// Linux, `termux-open-url` on Android, `cmd /c start` on Windows) with fully detached stdio so it
 /// cannot block the pager.
 ///
 /// Returns `true` when the opener was launched (or the test seam recorded
@@ -97,9 +101,15 @@ pub fn open_url(url: &str) -> bool {
         return true;
     }
 
+    // Termux has no desktop DISPLAY, but termux-open-url delegates to the
+    // Android browser through the Termux activity bridge.
+    #[cfg(target_os = "android")]
+    let cmd = "termux-open-url";
+
     // Skip the doomed spawn on headless Linux VMs (no DISPLAY / Wayland)
     // so billing Upgrade / Buy-credits clicks can fall back to showing the
     // URL instead of silently no-op'ing.
+    #[cfg(not(target_os = "android"))]
     if !browser_open_likely_available() {
         tracing::info!("skipping browser open: no display server / BROWSER");
         return false;
@@ -109,7 +119,7 @@ pub fn open_url(url: &str) -> bool {
     let cmd = "open";
     #[cfg(target_os = "windows")]
     let cmd = "cmd";
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "android")))]
     let cmd = "xdg-open";
 
     let mut command = std::process::Command::new(cmd);
@@ -138,7 +148,7 @@ pub fn open_url(url: &str) -> bool {
     }
 }
 
-/// Build the `open`/`xdg-open` opener command (macOS / Linux / BSD).
+/// Build the platform-native opener command for a local path.
 ///
 /// The returned command is TTY-guarded via [`xai_tty_utils::detach_std_command`]
 /// (`setsid`/`setpgid`) so the spawned GUI helper and its children can't grab
@@ -150,7 +160,9 @@ pub fn open_url(url: &str) -> bool {
 fn build_open_path_command(path: &std::path::Path) -> std::process::Command {
     #[cfg(target_os = "macos")]
     let mut command = std::process::Command::new("open");
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "android")]
+    let mut command = std::process::Command::new("termux-open");
+    #[cfg(all(not(target_os = "macos"), not(target_os = "android")))]
     let mut command = std::process::Command::new("xdg-open");
     command
         .arg(path)

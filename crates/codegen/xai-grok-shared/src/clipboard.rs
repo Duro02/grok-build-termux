@@ -29,7 +29,8 @@
 //! (kill switch if a future macOS gates `dataForType:` behind a prompt).
 //!
 //! On Linux and Windows, `arboard` is used directly (it does not link AppKit on
-//! those platforms).
+//! those platforms). On Android/Termux, the `termux-clipboard-get` and
+//! `termux-clipboard-set` commands are used when Termux:API is installed.
 //!
 //! ## OSC 52 (remote clipboard)
 //!
@@ -310,7 +311,11 @@ pub fn native_tool_name() -> &'static str {
     {
         platform::linux_tool_spec().map_or("arboard", |spec| spec.name)
     }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(target_os = "android")]
+    {
+        "termux-clipboard-set"
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android")))]
     {
         "arboard"
     }
@@ -1191,7 +1196,7 @@ mod platform {
 // ---------------------------------------------------------------------------
 // Linux / Windows: arboard with CLI-tool fallback on Linux
 // ---------------------------------------------------------------------------
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(not(target_os = "macos"), not(target_os = "android")))]
 mod platform {
     use super::ImageData;
     use std::process::{Command, Stdio};
@@ -2746,6 +2751,124 @@ mod platform {
         fn probe_and_lease_share_connect_deadline() {
             assert_eq!(DISPLAY_CONN_WAIT, std::time::Duration::from_secs(2));
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Android / Termux: Termux:API clipboard commands
+// ---------------------------------------------------------------------------
+#[cfg(target_os = "android")]
+mod platform {
+    use super::{ClipboardAttachments, ImageData, NativeWriteOutcome};
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    const CLIPBOARD_GET: &str = "termux-clipboard-get";
+    const CLIPBOARD_SET: &str = "termux-clipboard-set";
+
+    fn missing_api_error(command: &str, error: std::io::Error) -> anyhow::Error {
+        anyhow::anyhow!(
+            "{command} is unavailable ({error}); install the Termux:API app and the termux-api package"
+        )
+    }
+
+    pub(super) fn clipboard_image_snapshot() -> (Option<u64>, bool) {
+        (None, false)
+    }
+
+    pub(super) fn clipboard_change_count() -> Option<u64> {
+        None
+    }
+
+    pub(super) fn clipboard_prewarm() {}
+
+    pub(super) fn wayland_data_control_supported() -> bool {
+        false
+    }
+
+    pub(super) fn probe_wayland_data_control() -> super::WaylandDataControlProbe {
+        super::WaylandDataControlProbe::Unavailable
+    }
+
+    pub fn get_text() -> anyhow::Result<Option<String>> {
+        let output = Command::new(CLIPBOARD_GET)
+            .output()
+            .map_err(|error| missing_api_error(CLIPBOARD_GET, error))?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "{CLIPBOARD_GET} failed with status {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        let text = String::from_utf8_lossy(&output.stdout).into_owned();
+        if text.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(text))
+        }
+    }
+
+    pub fn set_text_with_outcome(text: &str) -> NativeWriteOutcome {
+        let mut outcome = NativeWriteOutcome {
+            cli_tools_tried: vec![CLIPBOARD_SET],
+            ..Default::default()
+        };
+
+        let result = (|| -> anyhow::Result<()> {
+            let mut child = Command::new(CLIPBOARD_SET)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|error| missing_api_error(CLIPBOARD_SET, error))?;
+            child
+                .stdin
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("{CLIPBOARD_SET} stdin unavailable"))?
+                .write_all(text.as_bytes())?;
+            let output = child.wait_with_output()?;
+            if !output.status.success() {
+                anyhow::bail!(
+                    "{CLIPBOARD_SET} failed with status {}: {}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stderr).trim()
+                );
+            }
+            Ok(())
+        })();
+
+        match result {
+            Ok(()) => {
+                outcome.cli_ok = true;
+                outcome.cli_ok_tools.push(CLIPBOARD_SET);
+                outcome.any_ok = true;
+            }
+            Err(error) => tracing::debug!("Termux clipboard write failed: {error}"),
+        }
+        outcome
+    }
+
+    pub fn get_image() -> anyhow::Result<Option<ImageData>> {
+        Ok(None)
+    }
+
+    pub fn set_image_file(path: &std::path::Path) -> anyhow::Result<()> {
+        let _ = path;
+        anyhow::bail!(
+            "Termux clipboard currently supports text only; image clipboard requires a native Android backend"
+        )
+    }
+
+    pub fn get_attachments() -> anyhow::Result<ClipboardAttachments> {
+        Ok(ClipboardAttachments {
+            file_urls: None,
+            image: None,
+        })
+    }
+
+    pub fn get_file_urls() -> anyhow::Result<Option<String>> {
+        Ok(None)
     }
 }
 

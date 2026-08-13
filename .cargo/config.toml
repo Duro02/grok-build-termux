@@ -64,6 +64,11 @@ rustflags = ["-C", "force-unwind-tables=yes", "-C", "target-feature=+crt-static"
 [target.aarch64-pc-windows-msvc]
 rustflags = ["-C", "force-unwind-tables=yes", "-C", "target-feature=+crt-static"]
 
+[target.aarch64-linux-android]
+# Termux ships libc++_shared.so rather than libc++_static.a. The wrapper
+# rewrites Rust's Android default before handing the arguments to clang.
+linker = "scripts/termux-android-linker.sh"
+
 
 # jemalloc page size for Apple Silicon (macOS aarch64 uses 16KB pages = 2^14).
 # This target-prefixed env var is consumed by tikv-jemalloc-sys's build.rs

@@ -112,6 +112,16 @@ fn resolve_appearance_chain(
 /// hop's snapshot.
 #[must_use]
 pub fn detect_desktop() -> Option<SystemAppearance> {
+    #[cfg(target_os = "android")]
+    {
+        return match dark_light::detect() {
+            dark_light::Mode::Dark => Some(SystemAppearance::Dark),
+            dark_light::Mode::Light => Some(SystemAppearance::Light),
+            dark_light::Mode::Unspecified => None,
+        };
+    }
+
+    #[cfg(not(target_os = "android"))]
     match dark_light::detect() {
         Ok(dark_light::Mode::Dark) => Some(SystemAppearance::Dark),
         Ok(dark_light::Mode::Light) => Some(SystemAppearance::Light),

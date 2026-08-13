@@ -395,7 +395,30 @@ async fn prompt_and_poll(
 /// where the URL is already rendered in the widget).
 async fn open_browser_detached(url: &str) -> bool {
     let url = url.to_owned();
-    match tokio::task::spawn_blocking(move || webbrowser::open(&url)).await {
+    match tokio::task::spawn_blocking(move || {
+        #[cfg(target_os = "android")]
+        {
+            std::process::Command::new("termux-open-url")
+                .arg(&url)
+                .status()
+                .and_then(|status| {
+                    if status.success() {
+                        Ok(())
+                    } else {
+                        Err(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            "termux-open-url returned a failure status",
+                        ))
+                    }
+                })
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            webbrowser::open(&url)
+        }
+    })
+    .await
+    {
         Ok(Ok(())) => true,
         Ok(Err(e)) => {
             tracing::info!(error = %e, "device auth: could not open browser automatically");

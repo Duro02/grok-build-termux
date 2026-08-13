@@ -1,0 +1,24 @@
+[package]
+name = "waitpid-any"
+version = "0.3.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Wait for any PID, with an Android-compatible Unix fallback"
+
+[lib]
+name = "waitpid_any"
+path = "src/lib.rs"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "macos", target_os = "netbsd", target_os = "openbsd"))'.dependencies.rustix]
+version = "1"
+default-features = false
+features = ["event", "process", "std"]
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+] }
