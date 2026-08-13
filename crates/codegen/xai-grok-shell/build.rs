@@ -13,7 +13,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Only bundle in release builds to avoid slowing down cargo check.
     println!("cargo:rerun-if-env-changed=GROK_SHELL_BUNDLE_RG_PATH");
     println!("cargo:rerun-if-env-changed=GROK_SHELL_RG_DOWNLOAD_BASE");
-    println!("cargo:rerun-if-env-changed=PATH");
     // Declare our custom cfg to the compiler so cfg(bundle_rg) is recognized by lints
     println!("cargo:rustc-check-cfg=cfg(bundle_rg)");
 
@@ -21,12 +20,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // touching the filesystem so debug `cargo check` needs no environment.
     let is_release = env::var("PROFILE").as_deref() == Ok("release");
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
-    let path_override = env::var("GROK_SHELL_BUNDLE_RG_PATH").ok().or_else(|| {
-        // Termux ships an Android-native rg package, but ripgrep does not
-        // publish an Android release tarball. Bundle the already-installed
-        // binary so release builds remain self-contained on Termux.
-        (is_release && target_os == "android").then(|| executable_on_path("rg"))?
-    });
+    let path_override = env::var("GROK_SHELL_BUNDLE_RG_PATH")
+        .ok()
+        .filter(|path| !path.is_empty());
+
+    // There is no official Android ripgrep release asset. A host `rg` binary
+    // must never be embedded into an Android executable, so use Termux's
+    // package-managed `rg` at runtime unless the caller explicitly supplies
+    // an Android-native binary.
+    if target_os == "android" && path_override.is_none() {
+        println!(
+            "cargo:warning=Skipping bundled ripgrep for Android; install ripgrep in Termux or set GROK_SHELL_BUNDLE_RG_PATH to an Android-native rg"
+        );
+        return Ok(());
+    }
+
     if path_override.is_none() && !is_release {
         return Ok(());
     }
@@ -159,26 +167,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
-}
-
-/// Find an executable regular file on PATH without invoking a shell.
-fn executable_on_path(name: &str) -> Option<String> {
-    #[cfg(unix)]
-    use std::os::unix::fs::PermissionsExt;
-
-    let path = env::var_os("PATH")?;
-    env::split_paths(&path).find_map(|dir| {
-        let candidate = dir.join(name);
-        let metadata = candidate.metadata().ok()?;
-        if !metadata.is_file() {
-            return None;
-        }
-        #[cfg(unix)]
-        if metadata.permissions().mode() & 0o111 == 0 {
-            return None;
-        }
-        Some(candidate.to_string_lossy().into_owned())
-    })
 }
 
 fn is_bazel_build(manifest_dir: &Path) -> bool {

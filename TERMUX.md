@@ -11,7 +11,7 @@ In Termux:
 
 ```sh
 pkg update
-pkg install rust clang make pkg-config protobuf
+pkg install rust clang make pkg-config protobuf ripgrep
 ```
 
 The repository's `bin/protoc` launcher is not an Android DotSlash artifact, so
@@ -68,5 +68,8 @@ during parallel native builds.
   permission and the Termux:API audio environment still apply.
 - The telemetry machine identifier uses a Termux-stable environment value and
   falls back to the cached agent identifier.
+- Ripgrep is resolved from Termux's `PATH`; Android builds deliberately do not
+  embed a Linux host ripgrep binary. An explicit Android-native binary can be
+  supplied with `GROK_TOOLS_BUNDLE_RG_PATH` and `GROK_SHELL_BUNDLE_RG_PATH`.
 - `waitpid-any` uses a portable Unix process-existence fallback because the
   upstream Linux `pidfd` module has no Android target branch.
