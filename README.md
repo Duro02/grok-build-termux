@@ -48,6 +48,33 @@ alias grok="$PWD/target/release/xai-grok-pager"
 See [`TERMUX.md`](TERMUX.md) for the complete local-build, cross-build, and
 Android compatibility guide.
 
+## Cross-compile on Linux
+
+You can build the Android `aarch64` release from a Linux computer without
+compiling on the phone. Install Rust with `rustup`, the Android NDK, and the
+host build tools:
+
+```sh
+sudo apt update
+sudo apt install clang lld binutils libssl-dev pkg-config protobuf-compiler
+rustup target add aarch64-linux-android
+```
+
+Set the NDK location and run the cross-build script from the repository root:
+
+```sh
+export ANDROID_NDK_ROOT=/path/to/android-ndk
+export ANDROID_API=24
+./scripts/build-termux-ci.sh
+```
+
+The packaged archive and SHA256 checksum are written to `dist/`:
+
+```text
+dist/grok-termux-aarch64-*.tar.gz
+dist/grok-termux-aarch64-*.tar.gz.sha256
+```
+
 ## Authentication and configuration
 
 On first launch, `grok` opens a browser for authentication. See the bundled
