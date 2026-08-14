@@ -19,7 +19,6 @@ Protocol (ACP).
 [Installing the released binary](#installing-the-released-binary) ·
 [Building from source](#building-from-source) ·
 [Documentation](#documentation) ·
-[Repository layout](#repository-layout) ·
 [Development](#development) ·
 [Contributing](#contributing) ·
 [License](#license)
@@ -51,6 +50,16 @@ grok --version
 See the [changelog](https://x.ai/build/changelog) for the latest fixes,
 features, and improvements in each release.
 
+For Termux on Android, download the latest `aarch64` archive and its checksum
+from the [Releases](https://github.com/Duro02/grok-build-termux/releases) page.
+In the directory containing both files, run:
+
+```sh
+sha256sum -c grok-termux-aarch64-*.tar.gz.sha256
+tar -xzf grok-termux-aarch64-*.tar.gz
+install -m 755 grok "$PREFIX/bin/grok"
+```
+
 ## Building from source
 
 Requirements:
@@ -80,17 +89,13 @@ cargo check -p xai-grok-pager-bin            # fast validation
 
 ### Termux / Android
 
-The TUI also has a native Termux build path. Install the Termux prerequisites
-and run [`scripts/build-termux.sh`](scripts/build-termux.sh); Android-specific
-clipboard, audio, sandbox, and process-wait behavior is documented in
-[`TERMUX.md`](TERMUX.md).
+For a local Termux build, install the prerequisites and run
+[`scripts/build-termux.sh`](scripts/build-termux.sh). The complete Termux
+guide is in [`TERMUX.md`](TERMUX.md).
 
-Pushes to `main` also run the Android NDK cross-build in GitHub Actions. The
-workflow uploads a checksum-protected artifact for device validation before a
-stable Release is published.
-
-The binary artifact is named `xai-grok-pager`; official installs ship it as
-`grok`. On first launch it opens your browser to authenticate — see the
+Android cross-builds run in [GitHub Actions](.github/workflows/termux-android.yml)
+and are validated before release. On first launch, `grok` opens your browser
+for authentication; see the
 [authentication guide](crates/codegen/xai-grok-pager/docs/user-guide/02-authentication.md).
 
 ## Documentation
@@ -102,24 +107,6 @@ The user guide ships with the pager crate:
 [`crates/codegen/xai-grok-pager/docs/user-guide/`](crates/codegen/xai-grok-pager/docs/user-guide/)
 — getting started, keyboard shortcuts, slash commands, configuration, theming,
 MCP servers, skills, plugins, hooks, headless mode, sandboxing, and more.
-
-## Repository layout
-
-| Path | Contents |
-|------|----------|
-| `crates/codegen/xai-grok-pager-bin` | Composition-root package; builds the `xai-grok-pager` binary |
-| `crates/codegen/xai-grok-pager` | The TUI: scrollback, prompt, modals, rendering |
-| `crates/codegen/xai-grok-shell` | Agent runtime + leader/stdio/headless entry points |
-| `crates/codegen/xai-grok-tools` | Tool implementations (terminal, file edit, search, ...) |
-| `crates/codegen/xai-grok-workspace` | Host filesystem, VCS, execution, checkpoints |
-| `crates/codegen/...` | The rest of the CLI crate closure (config, MCP, markdown, sandbox, ...) |
-| `crates/common/`, `crates/build/`, `prod/mc/` | Small shared leaf crates pulled in by the closure |
-| `third_party/` | Vendored upstream source (Mermaid diagram stack) — see below |
-
-> [!IMPORTANT]
-> The root `Cargo.toml` (workspace members, dependency versions, lints,
-> profiles) is **generated** — treat it as read-only. Prefer editing per-crate
-> `Cargo.toml` files.
 
 ## Development
 
