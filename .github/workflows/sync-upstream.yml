@@ -1,0 +1,95 @@
+name: Sync upstream
+
+# Detect upstream (xai-org/grok-build) updates by polling and open an
+# automated sync PR. Upstream cannot notify this repository (no cross-repo
+# webhooks), so a daily scheduled check plus a manual dispatch button is the
+# only reliable trigger. Runs after the upstream monorepo's usual daily sync
+# window (roughly 17:00-23:00 UTC).
+on:
+  schedule:
+    - cron: '30 23 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/xai-org/grok-build.git
+          git fetch --no-tags upstream main
+          echo "upstream/main: $(git rev-parse --short upstream/main)"
+
+      - name: Detect upstream changes
+        id: detect
+        run: |
+          upstream_rev=$(git show upstream/main:SOURCE_REV)
+          ours_rev=$(git show HEAD:SOURCE_REV)
+          if [ "$upstream_rev" = "$ours_rev" ] \
+             && git merge-base --is-ancestor upstream/main HEAD; then
+            echo "No upstream changes (SOURCE_REV $ours_rev)"
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "upstream_rev=$upstream_rev" >> "$GITHUB_OUTPUT"
+          echo "ours_rev=$ours_rev" >> "$GITHUB_OUTPUT"
+          git log --format='- %h %s' HEAD..upstream/main | head -80 > /tmp/upstream-changes.txt
+          echo "Detected upstream update:"
+          cat /tmp/upstream-changes.txt
+
+      - name: Create or update sync branch
+        if: steps.detect.outputs.changed == 'true'
+        run: |
+          git checkout -B sync/upstream origin/main
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git merge --no-edit upstream/main; then
+            echo "Merge conflicted; committing conflict markers for manual resolution"
+            git add -A
+            git commit -m "Merge upstream (conflicts; needs manual resolution)" || true
+            echo "conflicted=true" >> "$GITHUB_ENV"
+          fi
+          git push --force-with-lease origin sync/upstream
+          echo "pushed=true" >> "$GITHUB_ENV"
+
+      - name: Open or update sync PR
+        if: steps.detect.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          title="Sync upstream: SOURCE_REV ${{ steps.detect.outputs.ours_rev }} → ${{ steps.detect.outputs.upstream_rev }}"
+          body="Automated sync of xai-org/grok-build. The Termux Android build workflow validates this change; merge only when checks pass.
+
+$(cat /tmp/upstream-changes.txt)"
+          if [ "${conflicted:-}" = "true" ]; then
+            body="⚠️ The merge conflicts and needs manual resolution. Resolve locally, push to sync/upstream, and the build will re-run.
+
+$body"
+          fi
+          num=$(gh pr view sync/upstream --json number --jq '.number' 2>/dev/null || true)
+          if [ -n "$num" ]; then
+            gh pr edit "$num" --title "$title" --body "$body"
+          else
+            gh pr create --base main --head sync/upstream --title "$title" --body "$body"
+          fi
+
+      - name: Fail loudly on conflicts
+        if: env.conflicted == 'true'
+        run: |
+          echo "::error::Sync branch pushed with conflict markers; resolve locally and push to finish the PR."
+          exit 1

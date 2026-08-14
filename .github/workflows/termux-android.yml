@@ -11,6 +11,17 @@ on:
       - 'scripts/**'
       - 'TERMUX.md'
       - '.github/workflows/termux-android.yml'
+  # Validate the automated upstream-sync PRs before they are merged.
+  pull_request:
+    branches: [main]
+    paths:
+      - '.cargo/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'crates/**'
+      - 'scripts/**'
+      - 'TERMUX.md'
+      - '.github/workflows/termux-android.yml'
   workflow_dispatch:
 
 permissions:
