@@ -43,11 +43,25 @@ To use it as `grok` without copying the build output:
 alias grok="$PWD/target/release/xai-grok-pager"
 ```
 
-The repository also contains a cloud cross-build entry point at
-`scripts/build-termux-ci.sh`. GitHub Actions uses the Android NDK to produce
-an `aarch64-linux-android` artifact on an Ubuntu runner and uploads that
-artifact for validation. Publishing a GitHub Release is a separate step after
-the artifact has been checked.
+## Linux cross-build and CI
+
+The `scripts/build-termux-ci.sh` entry point works on a Linux computer as well
+as in GitHub Actions. It uses the Android NDK to produce an
+`aarch64-linux-android` artifact. Install Rust with `rustup`, the NDK, and the
+host tools `clang`, `lld`, `binutils`, `libssl-dev`, `pkg-config`, and
+`protobuf-compiler`, then run:
+
+```sh
+rustup target add aarch64-linux-android
+export ANDROID_NDK_ROOT=/path/to/android-ndk
+export ANDROID_API=24
+./scripts/build-termux-ci.sh
+```
+
+The script writes the packaged archive and checksum to `dist/`. GitHub Actions
+runs the same script on an Ubuntu runner and uploads the artifact for
+validation. Publishing a GitHub Release is a separate step after the artifact
+has been checked.
 
 For normal users, the intended path is to download a validated Release rather
 than compile on the phone. The native script remains useful as a fallback for
