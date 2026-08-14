@@ -3,8 +3,9 @@ name: Sync upstream
 # Detect upstream (xai-org/grok-build) updates by polling and open an
 # automated sync PR. Upstream cannot notify this repository (no cross-repo
 # webhooks), so a daily scheduled check plus a manual dispatch button is the
-# only reliable trigger. Runs after the upstream monorepo's usual daily sync
+# only reliable trigger. Runs after the upstream monorepo.s usual daily sync
 # window (roughly 17:00-23:00 UTC).
+# Trigger re-registration nudge: keep workflow_dispatch key parsed on registration.
 on:
   schedule:
     - cron: '30 23 * * *'
