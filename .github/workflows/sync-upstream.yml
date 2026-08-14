@@ -74,13 +74,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           title="Sync upstream: SOURCE_REV ${{ steps.detect.outputs.ours_rev }} → ${{ steps.detect.outputs.upstream_rev }}"
-          body="Automated sync of xai-org/grok-build. The Termux Android build workflow validates this change; merge only when checks pass.
-
-$(cat /tmp/upstream-changes.txt)"
+          body="Automated sync of xai-org/grok-build. The Termux Android build workflow validates this change; merge only when checks pass."
+          body+="$(printf '\n\n')$(cat /tmp/upstream-changes.txt)"
           if [ "${conflicted:-}" = "true" ]; then
-            body="⚠️ The merge conflicts and needs manual resolution. Resolve locally, push to sync/upstream, and the build will re-run.
-
-$body"
+            body="⚠️ The merge conflicts and needs manual resolution. Resolve locally, push to sync/upstream, and the build will re-run.$(printf '\n\n')$body"
           fi
           num=$(gh pr view sync/upstream --json number --jq '.number' 2>/dev/null || true)
           if [ -n "$num" ]; then
