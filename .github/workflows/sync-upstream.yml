@@ -55,7 +55,14 @@ jobs:
 
       - name: Create or update sync branch
         if: steps.detect.outputs.changed == 'true'
+        env:
+          GROK_SYNC_TOKEN: ${{ secrets.GROK_SYNC_TOKEN }}
         run: |
+          git fetch origin sync/upstream || true
+          if git merge-base --is-ancestor upstream/main origin/sync/upstream 2>/dev/null; then
+            echo "sync/upstream already contains upstream/main; keeping branch"
+            exit 0
+          fi
           git checkout -B sync/upstream origin/main
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -65,13 +72,13 @@ jobs:
             git commit -m "Merge upstream (conflicts; needs manual resolution)" || true
             echo "conflicted=true" >> "$GITHUB_ENV"
           fi
-          git push --force-with-lease origin sync/upstream
+          git push --force-with-lease "https://x-access-token:${GROK_SYNC_TOKEN}@github.com/${{ github.repository }}.git" sync/upstream
           echo "pushed=true" >> "$GITHUB_ENV"
 
       - name: Open or update sync PR
         if: steps.detect.outputs.changed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GROK_SYNC_TOKEN }}
         run: |
           title="Sync upstream: SOURCE_REV ${{ steps.detect.outputs.ours_rev }} → ${{ steps.detect.outputs.upstream_rev }}"
           body="Automated sync of xai-org/grok-build. The Termux Android build workflow validates this change; merge only when checks pass."
@@ -79,8 +86,6 @@ jobs:
           if [ "${conflicted:-}" = "true" ]; then
             body="⚠️ The merge conflicts and needs manual resolution. Resolve locally, push to sync/upstream, and the build will re-run.$(printf '\n\n')$body"
           fi
-          echo "--- token scopes ---"
-          curl -s -o /dev/null -D - -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/ | grep -i x-oauth-scopes || true
           repo="${{ github.repository }}"
           num=$(gh api "repos/$repo/pulls?head=sync/upstream&state=open" --jq '.[0].number // empty' 2>/dev/null || true)
           if [ -n "$num" ]; then
