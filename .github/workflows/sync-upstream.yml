@@ -79,11 +79,15 @@ jobs:
           if [ "${conflicted:-}" = "true" ]; then
             body="⚠️ The merge conflicts and needs manual resolution. Resolve locally, push to sync/upstream, and the build will re-run.$(printf '\n\n')$body"
           fi
+          echo "--- token scopes ---"
+          curl -s -o /dev/null -D - -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/ | grep -i x-oauth-scopes || true
           num=$(gh pr view sync/upstream --json number --jq '.number' 2>/dev/null || true)
           if [ -n "$num" ]; then
             gh pr edit "$num" --title "$title" --body "$body"
           else
-            gh pr create --base main --head sync/upstream --title "$title" --body "$body"
+            gh api -X POST repos/Duro02/grok-build-termux/pulls \
+              -f base=main -f head=sync/upstream -f title="$title" -f body="$body" \
+              --jq '.html_url' || gh pr create --base main --head sync/upstream --title "$title" --body "$body"
           fi
 
       - name: Fail loudly on conflicts
