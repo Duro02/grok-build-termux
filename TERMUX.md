@@ -45,9 +45,9 @@ alias grok="$PWD/target/release/xai-grok-pager"
 
 The repository also contains a cloud cross-build entry point at
 `scripts/build-termux-ci.sh`. GitHub Actions uses the Android NDK to produce
-an `aarch64-linux-android` artifact on an Ubuntu runner; the workflow uploads
-that artifact for phone validation and does not publish a stable Release
-automatically.
+an `aarch64-linux-android` artifact on an Ubuntu runner and uploads that
+artifact for validation. Publishing a GitHub Release is a separate step after
+the artifact has been checked.
 
 For normal users, the intended path is to download a validated Release rather
 than compile on the phone. The native script remains useful as a fallback for

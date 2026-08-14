@@ -2,3 +2,6 @@
 /dist
 **/*.rs.bk
 .DS_Store
+/key
+/grok-screen.png
+/grok-screencap.err
