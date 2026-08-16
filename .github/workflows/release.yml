@@ -1,0 +1,78 @@
+name: Release Termux package
+
+# Publish a GitHub Release when a termux-v* tag is pushed. Tagging is the
+# explicit "ship it" signal: no tag, no release. The version is taken from
+# the tag (termux-v1.0.5 -> 1.0.5) and injected into the binary via
+# GROK_VERSION so the artifact and the program version stay in sync.
+on:
+  push:
+    tags:
+      - 'termux-v*'
+
+permissions:
+  contents: write
+
+env:
+  ANDROID_NDK_VERSION: '27.2.12479018'
+  ANDROID_API: '24'
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Android SDK tooling
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: sdkmanager --install "ndk;${ANDROID_NDK_VERSION}"
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils clang lld libssl-dev pkg-config protobuf-compiler
+
+      - name: Set up Rust target
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-linux-android
+
+      - name: Build and package Android artifact
+        run: |
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          test -n "$sdk_root"
+          export ANDROID_NDK_HOME="$sdk_root/ndk/${ANDROID_NDK_VERSION}"
+          export ANDROID_NDK_ROOT="$ANDROID_NDK_HOME"
+          test -d "$ANDROID_NDK_HOME"
+          export GROK_VERSION="${GITHUB_REF_NAME#termux-v}"
+          ./scripts/build-termux-ci.sh
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${GITHUB_REF_NAME#termux-v}"
+          dist_dir=dist
+          artifact=$(ls "$dist_dir"/grok-termux-aarch64-*.tar.gz | head -1)
+          checksum=$(ls "$dist_dir"/*.sha256 | head -1)
+          test -n "$artifact" -a -n "$checksum"
+          prev_tag=$(git describe --abbrev=0 --tags "termux-v${version}^" 2>/dev/null || true)
+          if [ -n "$prev_tag" ]; then
+            notes=$(git log --oneline --no-merges "$prev_tag..HEAD")
+          else
+            notes="Initial Termux release."
+          fi
+          body="Unofficial Termux/Android aarch64 build of Grok Build ${version}."
+          body+="$(printf '\n\n')Download both assets, verify the SHA-256 file, extract the archive, and install the included grok binary into \$PREFIX/bin."
+          body+="$(printf '\n\n## Changes since %s\n\n' "${prev_tag:-start}")${notes}"
+          gh release create "$GITHUB_REF_NAME" "$artifact" "$checksum" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Grok Build ${version} for Termux (Android aarch64)" \
+            --notes "$body"
