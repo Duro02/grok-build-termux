@@ -72,7 +72,11 @@ jobs:
             git commit -m "Merge upstream (conflicts; needs manual resolution)" || true
             echo "conflicted=true" >> "$GITHUB_ENV"
           fi
-          git push --force-with-lease "https://x-access-token:${GROK_SYNC_TOKEN}@github.com/${{ github.repository }}.git" sync/upstream
+          # Push via the named remote so --force-with-lease can resolve the
+          # remote-tracking ref; a bare URL push has no tracking ref and is
+          # always rejected as "stale info".
+          git remote set-url origin "https://x-access-token:${GROK_SYNC_TOKEN}@github.com/${{ github.repository }}.git"
+          git push --force-with-lease origin sync/upstream
           echo "pushed=true" >> "$GITHUB_ENV"
 
       - name: Open or update sync PR
