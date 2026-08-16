@@ -70,9 +70,17 @@ jobs:
             notes="Initial Termux release."
           fi
           body="Unofficial Termux/Android aarch64 build of Grok Build ${version}."
-          body+="$(printf '\n\n')Download both assets, verify the SHA-256 file, extract the archive, and install the included grok binary into \$PREFIX/bin."
-          body+="$(printf '\n\n## Changes since %s\n\n' "${prev_tag:-start}")${notes}"
+          notes_file="$RUNNER_TEMP/release-notes.md"
+          {
+            echo "$body"
+            echo
+            echo "Download both assets, verify the SHA-256 file, extract the archive, and install the included grok binary into \$PREFIX/bin."
+            echo
+            echo "## Changes since ${prev_tag:-start}"
+            echo
+            echo "$notes"
+          } > "$notes_file"
           gh release create "$GITHUB_REF_NAME" "$artifact" "$checksum" \
             --repo "$GITHUB_REPOSITORY" \
             --title "Grok Build ${version} for Termux (Android aarch64)" \
-            --notes "$body"
+            --notes-file "$notes_file"
