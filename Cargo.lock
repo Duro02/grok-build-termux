@@ -13687,6 +13687,7 @@ dependencies = [
  "xai-grok-tools",
  "xai-grok-version",
  "xai-sqlite-journal",
+ "xai-token-estimation",
 ]
 
 [[package]]
@@ -13717,7 +13718,7 @@ dependencies = [
 
 [[package]]
 name = "xai-grok-pager"
-version = "1.0.4"
+version = "1.0.5"
 dependencies = [
  "agent-client-protocol",
  "ansi-to-tui",
@@ -13810,7 +13811,7 @@ dependencies = [
 
 [[package]]
 name = "xai-grok-pager-bin"
-version = "1.0.4"
+version = "1.0.5"
 dependencies = [
  "anyhow",
  "clap",
@@ -14125,7 +14126,7 @@ dependencies = [
 
 [[package]]
 name = "xai-grok-shell"
-version = "1.0.4"
+version = "1.0.5"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -14546,7 +14547,7 @@ dependencies = [
 
 [[package]]
 name = "xai-grok-version"
-version = "1.0.4"
+version = "1.0.5"
 dependencies = [
  "semver",
 ]
