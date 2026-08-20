@@ -7,6 +7,7 @@
 //! - [`Effect`] — produced by dispatch, consumed by the event loop (async).
 //! - [`TaskResult`] — produced by spawned tasks, fed back into dispatch.
 use super::agent::AgentId;
+use crate::app::status_line::StatusLineRun;
 use crate::scrollback::entry::EntryId;
 use agent_client_protocol as acp;
 use xai_grok_shell::sampling::types::ReasoningEffort;
@@ -1416,6 +1417,8 @@ pub enum AfterSessionDelete {
 /// [`TaskResult`] as `Action::TaskComplete`.
 #[derive(Debug)]
 pub enum Effect {
+    /// Run a `command` status line.
+    RunStatusLineCommand(StatusLineRun),
     /// Create a new ACP session.
     CreateSession {
         agent_id: AgentId,
@@ -1626,7 +1629,7 @@ pub enum Effect {
         version: i32,
         acked: bool,
     },
-    /// Until a handler exists this always fails, and the local marker is what stops the re-prompt.
+    /// Files the acceptance server side; the local marker is what stops the re-prompt if it fails.
     RecordConsentUpstream { notice_id: String, version: i32 },
     /// Persist memory modal fullscreen preference to `[hints]` in config.toml.
     PersistMemoryFullscreen { fullscreen: bool },
@@ -2289,6 +2292,11 @@ impl TaskResult {
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum TaskResult {
+    /// A `command` status line finished.
+    StatusLineCommandFinished {
+        id: crate::app::status_line::RunId,
+        outcome: crate::app::status_line::RunOutcome,
+    },
     /// Session was created successfully.
     SessionCreated {
         agent_id: AgentId,

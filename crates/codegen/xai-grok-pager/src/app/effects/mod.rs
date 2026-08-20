@@ -73,6 +73,16 @@ pub(crate) fn execute(
                 tracing::warn!(error = %e, "change location: failed to set_current_dir");
             }
         }
+        Effect::RunStatusLineCommand(run) => {
+            tasks
+                .spawn(async move {
+                    let (id, outcome) = run.execute().await;
+                    TaskResult::StatusLineCommandFinished {
+                        id,
+                        outcome,
+                    }
+                });
+        }
         Effect::ScheduleClearAuthCopyFeedback { generation } => {
             tasks
                 .spawn(async move {
@@ -2016,7 +2026,7 @@ pub(crate) fn execute(
                             }
                         }
                         Err(e) => {
-                            tracing::debug!(error = %e, "consent record not sent; no server handler yet");
+                            tracing::warn!(error = %e, %notice_id, "consent record not filed");
                             TaskResult::CancelComplete
                         }
                     }
