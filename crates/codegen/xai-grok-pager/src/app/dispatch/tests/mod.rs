@@ -8,6 +8,7 @@ mod modes;
 mod notes;
 mod permissions;
 mod prompt;
+mod queue_release;
 mod rewind;
 mod router;
 mod session;
@@ -41,7 +42,7 @@ use super::dashboard::{
 };
 use super::modes::{
     YOLO_ON_UNDER_PLAN_TOAST, active_agent_plan_nudge_state, dispatch_cycle_mode_and_sync,
-    permission_mode_toast,
+    downgrade_displayed_auto_if_gated, permission_mode_toast,
 };
 use super::permissions::drain_permission_queue;
 use super::prompt::{dispatch_doctor, dispatch_send_prompt, dispatch_send_prompt_inner};
@@ -68,6 +69,7 @@ use crate::app::app_view::{
 use crate::scrollback::block::RenderBlock;
 use crate::scrollback::blocks::{SessionEvent, ToolCallBlock};
 use crate::scrollback::state::ScrollbackState;
+use crate::views::session_picker_surface::SessionPickerHost;
 use agent_client_protocol as acp;
 use indexmap::IndexMap;
 use std::path::PathBuf;
@@ -247,7 +249,10 @@ fn test_app() -> AppView {
         foreign_session_scan_seq: 0,
         foreign_scan_coordinator: Default::default(),
         session_picker_lanes: Default::default(),
-        session_picker_detail_generation: 0,
+        session_picker_detail_seq: 0,
+        picker_generation_counter: 0,
+        session_picker_generation: 0,
+        dashboard_session_picker: None,
         session_picker_entries_query: None,
         session_picker_pending_delete: None,
         welcome_tick: 0,
@@ -262,6 +267,7 @@ fn test_app() -> AppView {
         import_claude_modal: None,
         welcome_doc_viewer: None,
         screen_mode: crate::app::ScreenMode::Inline,
+        pending_screen_mode_switch: None,
         pending_effects: Vec::new(),
         pending_editor: None,
         pending_pager_path: None,
@@ -271,6 +277,7 @@ fn test_app() -> AppView {
         show_resolved_model: true,
         sharing_enabled: false,
         plugin_cta_enabled: false,
+        plugin_cta_marketplace: None,
         workspace_dashboard_enabled: false,
         usage_visible: true,
         has_external_auth_provider: false,
@@ -289,6 +296,9 @@ fn test_app() -> AppView {
         scheduler_background_loops_seed: true,
         cancel_rewind_enabled: true,
         session_recap_available: false,
+        shell_feedback_trace_offer: false,
+        feedback_trace_choice_latched: false,
+        feedback_trace_upload_pending: None,
         tutorial: None,
         dashboard: None,
         dashboard_return: None,
@@ -797,6 +807,7 @@ fn make_picker_entry(id: &str, cwd: &str) -> crate::app::app_view::SessionPicker
         worktree_label: None,
         last_turn_summary: None,
         last_recap: None,
+        session_kind: None,
         card_detail: None,
     }
 }
@@ -806,11 +817,16 @@ fn make_conversation_entry(id: &str) -> crate::app::app_view::SessionPickerEntry
     e
 }
 /// Open a SessionPicker modal on the active agent seeded with `entries`.
+///
+/// Stamps a real allocated generation (production modals get theirs from
+/// `dispatch_fetch_session_list`), so helper-seeded modals can receive
+/// generation-gated results.
 fn open_session_picker_with(
     app: &mut AppView,
     entries: Vec<crate::app::app_view::SessionPickerEntry>,
 ) {
     use crate::views::modal::ActiveModal;
+    let generation = app.alloc_picker_generation();
     let agent = get_active_agent_mut(app).expect("active agent");
     agent.active_modal = Some(ActiveModal::SessionPicker {
         state: crate::views::picker::PickerState::default(),
@@ -822,10 +838,37 @@ fn open_session_picker_with(
         content_results: None,
         content_loading: false,
         deep_search_seq: 0,
+        generation,
+        detail_seq: 0,
         entries_query: None,
         source_filter: crate::views::session_picker::SourceFilter::default(),
         pending_delete: None,
     });
+}
+/// Live generation of the active agent's SessionPicker modal, for stamping
+/// modal-host results the way the executors echo them.
+fn modal_picker_generation(app: &AppView) -> u64 {
+    use crate::views::modal::ActiveModal;
+    match get_active_agent(app)
+        .expect("active agent")
+        .active_modal
+        .as_ref()
+    {
+        Some(ActiveModal::SessionPicker { generation, .. }) => *generation,
+        _ => panic!("expected SessionPicker modal"),
+    }
+}
+/// Live card-detail seq of the active agent's SessionPicker modal.
+fn modal_picker_detail_seq(app: &AppView) -> u64 {
+    use crate::views::modal::ActiveModal;
+    match get_active_agent(app)
+        .expect("active agent")
+        .active_modal
+        .as_ref()
+    {
+        Some(ActiveModal::SessionPicker { detail_seq, .. }) => *detail_seq,
+        _ => panic!("expected SessionPicker modal"),
+    }
 }
 /// Toast strings match the expected format and contain on/off
 /// status.

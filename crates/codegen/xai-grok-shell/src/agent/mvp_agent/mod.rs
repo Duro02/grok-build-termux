@@ -273,6 +273,8 @@ pub(crate) struct SessionSpawnOptions<'a> {
     pub session_yolo_mode: bool,
     pub session_auto_mode: bool,
     pub prompt_display_cwd: Option<String>,
+    /// Persisted visibility of this Build session for roster snapshots/deltas.
+    pub is_headless: bool,
     /// Sticky chat product kind for ACU / product skills sourcing.
     pub is_chat_kind: bool,
 }
@@ -449,6 +451,7 @@ pub(crate) fn chat_session_spawn_options<'a>(
         session_yolo_mode,
         session_auto_mode: false,
         prompt_display_cwd: None,
+        is_headless: false,
         is_chat_kind: true,
     }
 }
@@ -716,6 +719,7 @@ const IDLE_QUERY_TIMEOUT: std::time::Duration = std::time::Duration::from_millis
 struct ResidentResources {
     /// Strong ref pinning the code-nav index; the manager holds only a `Weak`.
     codebase_index: Option<std::sync::Arc<xai_codebase_graph::IndexManagerHandle>>,
+    is_headless: bool,
     require_gateway: bool,
 }
 /// Per-session state that survives an idle-unload (so the session stays
@@ -893,6 +897,10 @@ pub struct MvpAgent {
     >,
     /// Shell-only presentation state; lifecycle lives in the channel actor.
     subagent_presentation: RefCell<crate::agent::subagent::SubagentPresentation>,
+    /// Shared subagent turn-sampling semaphore, cloned into every
+    /// `SubagentSpawnContext`. LEADER-SAFE(shared). See
+    /// [`crate::config::SubagentsConfig::resolve_sampling_limit`].
+    subagent_sampling_semaphore: Arc<tokio::sync::Semaphore>,
     /// Shared buffer for mid-turn monitor event notifications.
     /// Pushed by the `InjectNotification` handler when a turn is active and the
     /// notification has `Next` priority. Drained by the session turn loop
@@ -1041,6 +1049,7 @@ pub struct MvpAgent {
 /// Loading TLS root certs is ~95ms; doing it here avoids a cold-start hit
 /// on the first request. Idempotent.
 pub fn warm_async_http_client() {
+    xai_grok_extra_ca::ensure_default_crypto_provider();
     std::thread::spawn(|| {
         let _timer = crate::instrumentation_timer!("startup.async_http_warmup");
         let _ = crate::http::shared_client();
@@ -1360,6 +1369,67 @@ fn resolve_inference_idle_timeout_secs(
     let remote = remote_settings.and_then(|s| s.inference_idle_timeout_secs);
     per_model.or(remote).unwrap_or(600).max(10)
 }
+/// Resolve the subagent 429 wait-attempt budget: env > config.toml (per-model) > remote > default.
+pub(crate) fn resolve_subagent_rate_limit_max_attempts(
+    config_toml: Option<u32>,
+    remote: Option<u32>,
+    env: Option<u32>,
+) -> u32 {
+    use crate::session::acp_session::RateLimitWaitConfig;
+    let requested = env
+        .or(config_toml)
+        .or(remote)
+        .unwrap_or(RateLimitWaitConfig::DEFAULT_MAX_ATTEMPTS);
+    let cap = RateLimitWaitConfig::MAX_ATTEMPTS_CAP;
+    if requested > cap {
+        tracing::info!(
+            requested,
+            clamped_to = cap,
+            "subagent_rate_limit_max_attempts clamped to the cap"
+        );
+    }
+    requested.min(cap)
+}
+pub(crate) fn subagent_rate_limit_max_attempts_env() -> Option<u32> {
+    parse_subagent_rate_limit_max_attempts(
+        std::env::var("GROK_SUBAGENT_RATE_LIMIT_MAX_ATTEMPTS").ok().as_deref(),
+    )
+}
+/// Empty is unset; an invalid value (non-numeric, negative, or overflowing
+/// `u32`) is ignored with one warning per spawn. Takes the raw value so tests
+/// never touch the process environment.
+fn parse_subagent_rate_limit_max_attempts(raw: Option<&str>) -> Option<u32> {
+    let value = raw?.trim();
+    if value.is_empty() {
+        return None;
+    }
+    match value.parse::<u32>() {
+        Ok(parsed) => Some(parsed),
+        Err(_) => {
+            tracing::warn!(
+                value,
+                "ignoring invalid GROK_SUBAGENT_RATE_LIMIT_MAX_ATTEMPTS"
+            );
+            None
+        }
+    }
+}
+impl MvpAgent {
+    /// Resolve the subagent 429 wait budget from the caller's `per_model` tier (remote + env read here).
+    fn resolved_subagent_rate_limit_max_attempts(&self, per_model: Option<u32>) -> u32 {
+        let remote = self
+            .cfg
+            .borrow()
+            .remote_settings
+            .as_ref()
+            .and_then(|s| s.subagent_rate_limit_max_attempts);
+        resolve_subagent_rate_limit_max_attempts(
+            per_model,
+            remote,
+            subagent_rate_limit_max_attempts_env(),
+        )
+    }
+}
 /// Parse the client-advertised `x.ai/hunkTracker.mode` string. Case-insensitive
 /// and trimmed. Absent/blank/`off`/`disabled` => `None`; unknown => `AllDirty`.
 fn resolve_hunk_tracking_mode(
@@ -1419,11 +1489,11 @@ mod heap_profile;
 mod resource_telemetry;
 mod session_registry;
 mod session_lifecycle;
-mod subagent_coordinator;
 mod agent_ops;
 mod acp_agent;
 pub(crate) mod reasoning_effort;
 mod session_setup;
+mod subagent_spawn;
 use session_registry::SessionRegistry;
 pub(crate) use session_lifecycle::RegistrySnapshot;
 pub(super) use super::ext_parsers;
@@ -1936,6 +2006,7 @@ impl MvpAgent {
                     show_resolved_model,
                     gate,
                     subscription_tier,
+                    feedback_trace_offer: self.feedback_trace_offer(),
                 };
                 serde_json::to_value(auth_meta)
                     .ok()
