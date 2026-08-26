@@ -70,17 +70,11 @@ pub fn browser_unavailable_line(url: &str, copied: bool) -> String {
 
 /// Open a URL in the system's default browser/handler.
 ///
-<<<<<<< HEAD
-/// Spawns the platform-native opener (`open` on macOS, `xdg-open` on
-/// Linux, `termux-open-url` on Android, `cmd /c start` on Windows) with fully detached stdio so it
-/// cannot block the pager.
-=======
-/// Uses the platform-native opener: `open` on macOS and `xdg-open` on
-/// Linux (spawned with fully detached stdio so it cannot block the pager),
-/// and `ShellExecuteW` on Windows — never `cmd /c start`, whose `&`
-/// metacharacter splitting and `%VAR%` expansion would let a crafted URL
-/// run arbitrary commands.
->>>>>>> upstream/main
+/// Uses the platform-native opener: `open` on macOS, `xdg-open` on Linux,
+/// and `termux-open-url` on Android (spawned with fully detached stdio so
+/// it cannot block the pager), and `ShellExecuteW` on Windows — never
+/// `cmd /c start`, whose `&` metacharacter splitting and `%VAR%` expansion
+/// would let a crafted URL run arbitrary commands.
 ///
 /// Returns `true` when the opener was launched (or the test seam recorded
 /// the URL). Returns `false` when the environment looks headless or spawn
@@ -109,9 +103,8 @@ pub fn open_url(url: &str) -> bool {
     }
 
     // Termux has no desktop DISPLAY, but termux-open-url delegates to the
-    // Android browser through the Termux activity bridge.
-    #[cfg(target_os = "android")]
-    let cmd = "termux-open-url";
+    // Android browser through the Termux activity bridge. Skip this desktop
+    // availability check there and let spawn_url_opener use the bridge.
 
     // Skip the doomed spawn on headless Linux VMs (no DISPLAY / Wayland)
     // so billing Upgrade / Buy-credits clicks can fall back to showing the
@@ -174,13 +167,9 @@ fn spawn_url_opener(url: &str) -> bool {
 fn spawn_url_opener(url: &str) -> bool {
     #[cfg(target_os = "macos")]
     let cmd = "open";
-<<<<<<< HEAD
-    #[cfg(target_os = "windows")]
-    let cmd = "cmd";
-    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "android")))]
-=======
-    #[cfg(not(target_os = "macos"))]
->>>>>>> upstream/main
+    #[cfg(target_os = "android")]
+    let cmd = "termux-open-url";
+    #[cfg(not(any(target_os = "macos", target_os = "android")))]
     let cmd = "xdg-open";
 
     let mut command = std::process::Command::new(cmd);
