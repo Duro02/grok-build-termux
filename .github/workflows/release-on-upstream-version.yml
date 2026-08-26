@@ -1,0 +1,93 @@
+name: Publish new upstream version
+
+# A validated upstream sync is merged to main by auto-merge-upstream.yml.
+# When that merge changes the shipping binary version, create the matching
+# termux-v* tag. release.yml treats that tag as the explicit publish signal.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - crates/codegen/xai-grok-pager-bin/Cargo.toml
+      - crates/codegen/xai-grok-version/Cargo.toml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-upstream-version
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Tags pushed with GITHUB_TOKEN do not trigger release.yml.
+          token: ${{ secrets.GROK_SYNC_TOKEN }}
+
+      - name: Read and validate upstream version
+        id: version
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import os
+          import re
+          import tomllib
+          from pathlib import Path
+
+          manifests = [
+              Path("crates/codegen/xai-grok-pager-bin/Cargo.toml"),
+              Path("crates/codegen/xai-grok-version/Cargo.toml"),
+          ]
+          versions = []
+          for manifest in manifests:
+              with manifest.open("rb") as f:
+                  versions.append(tomllib.load(f)["package"]["version"])
+
+          if versions[0] != versions[1]:
+              raise SystemExit(
+                  f"shipping version mismatch: {manifests[0]}={versions[0]}, "
+                  f"{manifests[1]}={versions[1]}"
+              )
+
+          # Full SemVer 2.0.0 syntax.
+          semver = re.compile(
+              r"^(0|[1-9][0-9]*)\."
+              r"(0|[1-9][0-9]*)\."
+              r"(0|[1-9][0-9]*)"
+              r"(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
+              r"(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?"
+              r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
+          )
+          version = versions[0]
+          if not semver.fullmatch(version):
+              raise SystemExit(f"invalid upstream SemVer: {version}")
+
+          tag = "termux-v" + version
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              print(f"version={version}", file=out)
+              print(f"tag={tag}", file=out)
+          PY
+
+      - name: Create release tag when missing
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "$TAG already exists; version $VERSION has already been published or queued."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Termux release $VERSION"
+          git push origin "refs/tags/$TAG"
+          echo "Pushed $TAG; release.yml will build and publish it."
