@@ -1,0 +1,75 @@
+name: Auto-merge validated upstream sync
+
+# The sync workflow opens PRs from the repository-owned sync/upstream branch.
+# Merge them only after the Android build succeeds for the exact PR head SHA.
+# No PR code is checked out or executed here; the completed build already did
+# that in the unprivileged validation workflow.
+on:
+  workflow_run:
+    workflows:
+      - Termux Android build
+    types:
+      - completed
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: auto-merge-upstream
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Merge validated upstream sync PR
+        env:
+          # A PAT is required here. Events created with GITHUB_TOKEN do not
+          # trigger downstream push workflows, including version publishing.
+          GH_TOKEN: ${{ secrets.GROK_SYNC_TOKEN }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          pr_number=$(jq -r '.workflow_run.pull_requests[0].number // empty' "$GITHUB_EVENT_PATH")
+
+          # Push and manual-dispatch builds are not associated with a PR.
+          if [ -z "$pr_number" ]; then
+            echo "Successful build is not associated with a pull request; nothing to merge."
+            exit 0
+          fi
+
+          pr=$(gh api "repos/$repo/pulls/$pr_number")
+          state=$(jq -r '.state' <<<"$pr")
+          base_ref=$(jq -r '.base.ref' <<<"$pr")
+          head_ref=$(jq -r '.head.ref' <<<"$pr")
+          head_repo=$(jq -r '.head.repo.full_name // empty' <<<"$pr")
+          head_sha=$(jq -r '.head.sha' <<<"$pr")
+          title=$(jq -r '.title' <<<"$pr")
+
+          if [ "$state" != "open" ] \
+             || [ "$base_ref" != "main" ] \
+             || [ "$head_ref" != "sync/upstream" ] \
+             || [ "$head_repo" != "$repo" ] \
+             || [[ "$title" != "Sync upstream:"* ]]; then
+            echo "PR #$pr_number is not the repository-owned upstream sync PR; refusing to merge."
+            exit 0
+          fi
+
+          if [ "$head_sha" != "$RUN_HEAD_SHA" ]; then
+            echo "PR head moved from validated $RUN_HEAD_SHA to $head_sha; refusing stale merge."
+            exit 0
+          fi
+
+          result=$(gh api -X PUT "repos/$repo/pulls/$pr_number/merge" \
+            -f merge_method=merge \
+            -f sha="$RUN_HEAD_SHA")
+          if [ "$(jq -r '.merged' <<<"$result")" != "true" ]; then
+            jq . <<<"$result"
+            echo "Automatic merge was rejected by GitHub."
+            exit 1
+          fi
+          echo "Merged upstream sync PR #$pr_number at $RUN_HEAD_SHA."
