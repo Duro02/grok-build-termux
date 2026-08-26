@@ -910,11 +910,26 @@ impl SessionActor {
             .unwrap_or(false);
         let model_id = sampling_config.map(|c| c.model).unwrap_or_default();
         let compaction = xai_grok_telemetry::events::CompactionScope::begin(
-            trigger,
-            tokens_before,
-            context_window,
-            model_id.clone(),
-            user_context.is_some(),
+            xai_grok_telemetry::events::CompactionBeginParams {
+                trigger,
+                tokens_used: tokens_before,
+                context_window,
+                model_id: model_id.clone(),
+                user_context_provided: user_context.is_some(),
+                compaction_mode: match self.compaction.compaction_mode {
+                    xai_chat_state::CompactionMode::Summary => {
+                        xai_grok_telemetry::events::CompactionModeLabel::Summary
+                    }
+                    xai_chat_state::CompactionMode::Transcript => {
+                        xai_grok_telemetry::events::CompactionModeLabel::Transcript
+                    }
+                    xai_chat_state::CompactionMode::Segments(_) => {
+                        xai_grok_telemetry::events::CompactionModeLabel::Segments
+                    }
+                },
+                two_pass_enabled: self.two_pass_active(),
+                is_subagent: self.startup_hints.is_subagent,
+            },
         );
         let compact_source = trigger_str;
         self.dispatch_hook(
@@ -933,6 +948,7 @@ impl SessionActor {
             self.chat_state_handle.get_system_message(),
             self.chat_state_handle.get_conversation(),
         );
+        let assembly_start = std::time::Instant::now();
         let segment_messages = if self.compaction.compaction_mode.writes_segments() {
             xai_chat_state::compaction_utils::prepare_conversation_for_segment(
                 full_conversation.clone(),
@@ -952,6 +968,7 @@ impl SessionActor {
                 full_conversation,
             )
         };
+        let pre_compaction_ms = assembly_start.elapsed().as_millis() as u64;
         if conv_len == 0 {
             tracing::error!(
                 session_id = %self.session_info.id.0,
@@ -1090,6 +1107,7 @@ impl SessionActor {
         let two_pass_output = self
             .try_two_pass_pass2_apply(user_context.as_deref(), summary_strips_reasoning)
             .await;
+        let two_pass_used = two_pass_output.is_some();
         let mut compact_summary: Option<String> =
             two_pass_output.as_ref().map(|o| o.content.clone());
         while compact_summary.is_none() {
@@ -1500,8 +1518,12 @@ impl SessionActor {
                     .map(|b| b as &dyn xai_grok_tools::types::memory_backend::MemoryBackend)
             };
         let suppress_state_reminder = false;
+        let workflow_listing = self.workflow_listing_for_prompt();
         let system_reminder = if suppress_state_reminder {
-            None
+            workflow_listing.as_deref().map(|listing| {
+                let tag = self.reminder_wrapper_tag();
+                format!("<{tag}>\n## Available Workflows\n{listing}\n</{tag}>")
+            })
         } else {
             to_system_reminder(
                 &state_context,
@@ -1510,6 +1532,7 @@ impl SessionActor {
                 memory_ref,
                 subagent_tool_names.as_ref(),
                 mcp_tool_names.as_ref(),
+                workflow_listing.as_deref(),
             )
             .await
         };
@@ -1579,6 +1602,7 @@ impl SessionActor {
             .compaction
             .count
             .load(std::sync::atomic::Ordering::Relaxed);
+        let apply_start = std::time::Instant::now();
         let raw_compacted = build_compacted_history(CompactedHistoryInput {
             system_message: system_message.clone(),
             user_message_prefix: user_message_prefix.clone(),
@@ -1625,6 +1649,7 @@ impl SessionActor {
                 summary_count,
             })
         };
+        let post_compaction_ms = apply_start.elapsed().as_millis() as u64;
         let prompt_index_at_compaction = self.chat_state_handle.get_prompt_index().await;
         let original_user_info = self
             .chat_state_handle
@@ -1644,7 +1669,9 @@ impl SessionActor {
         if cancel.is_cancelled() {
             return self.emit_compact_cancelled(auto_trigger).await;
         }
-        self.persist_compaction_segment(&segment_messages, &generate_session_compact);
+        let segments_queued = u32::from(
+            self.persist_compaction_segment(&segment_messages, &generate_session_compact),
+        );
         self.chat_state_handle
             .record_compaction_at(prompt_index_at_compaction);
         self.persist_compaction_checkpoint(
@@ -1726,7 +1753,7 @@ impl SessionActor {
             .tool_bridge()
             .on_skill_discovery_compaction()
             .await;
-        self.persist_announcement_state().await;
+        self.rearm_failed_server_announcements().await;
         self.plan_mode.lock().reset_after_compaction();
         self.persist_plan_mode_state();
         self.dispatch_hook(
@@ -1782,7 +1809,20 @@ impl SessionActor {
                 span.record("compaction_itl_max_ms", ms as i64);
             }
         }
-        compaction.complete(tokens_after);
+        compaction.complete(
+            xai_grok_telemetry::events::CompactionCompleteStats {
+                tokens_after,
+                two_pass_used,
+                segments_queued,
+                degenerate_retries: telemetry.degenerate_rejections,
+                input_overflow_retries: input_overflow_rejections,
+            },
+            xai_grok_telemetry::events::CompactionTiming {
+                model_wait_ms: compact_output.model_wait_ms(),
+                pre_compaction_ms: Some(pre_compaction_ms),
+                post_compaction_ms: Some(post_compaction_ms),
+            },
+        );
         Ok(())
     }
     /// Check if auto-compact should be triggered based on context window usage.

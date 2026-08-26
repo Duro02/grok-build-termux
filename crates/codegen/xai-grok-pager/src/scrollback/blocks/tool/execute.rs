@@ -41,7 +41,7 @@ impl ExecuteToolCallBlock {
     ///
     /// `started_at` defaults to `None`. For streaming blocks, timing begins
     /// when the block enters running UI state (via `start_timing()`).
-    /// Pre-completed blocks never get timing — they show `"—"`.
+    /// Pre-completed blocks never get timing — they show `"-"`.
     pub fn new(command: impl Into<String>) -> Self {
         Self {
             command: command.into(),
@@ -743,10 +743,10 @@ impl BlockContent for ExecuteToolCallBlock {
     }
 
     /// Agent tools start **Collapsed** (no auto-expand of stdout). User `!`
-    /// bash starts Truncated so output streams — errors included: the
-    /// tracker's Completed refinement resets to this default right before
-    /// `finish_running`, so a Collapsed error default would defeat the
-    /// Expanded finish.
+    /// bash defaults to Truncated so a kind-upgrade or first materialize
+    /// lands Truncated; `finish_running` then expands because the mode is
+    /// not Collapsed. Same-kind completion preserves Truncated rather than
+    /// resetting.
     fn default_display_mode(&self) -> DisplayMode {
         if self.bash_mode {
             DisplayMode::Truncated

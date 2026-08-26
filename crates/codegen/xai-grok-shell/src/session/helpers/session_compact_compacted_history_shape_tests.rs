@@ -18,7 +18,7 @@ fn build_compacted_history(
     discovered_agents_md: &[std::path::PathBuf],
 ) -> Vec<ConversationItem> {
     let system_reminder =
-        to_system_reminder_sync(state_context, discovered_agents_md, &[], None, None);
+        to_system_reminder_sync(state_context, discovered_agents_md, &[], None, None, None);
     build_compacted_history_shared(CompactedHistoryInput {
         system_message: ConversationItem::system(system_prompt),
         user_message_prefix: user_message_prefix.to_string(),
@@ -141,11 +141,6 @@ async fn test_compacted_history_raw_strings() {
         !msg_summary_text.contains("<system-reminder>"),
         "Summary message should NOT contain system-reminder (it is now separate)"
     );
-    assert!(
-        msg_summary_text
-            .starts_with("This session is being continued from a previous conversation"),
-        "Summary should start with the continuation preamble"
-    );
     let formatted_summary =
         xai_chat_state::compaction_utils::format_compact_summary_content(compaction_summary);
     assert_eq!(
@@ -192,10 +187,6 @@ async fn test_compacted_history_minimal_no_state_context() {
     assert_eq!(query, "<user_query>\nhello world\n</user_query>");
     assert_eq!(compacted[3].text_content(), "Hi! How can I help?");
     let summary = compacted[4].text_content();
-    assert!(
-        summary.starts_with("This session is being continued"),
-        "Summary should start with preamble (no <user_query> wrapping)"
-    );
     assert!(
         summary.contains("Summary: user said hello."),
         "Summary should contain the original summary text"
@@ -392,7 +383,7 @@ async fn test_compacted_history_with_running_subagents() {
         cancel: "kill_command_or_subagent".into(),
     };
     let system_reminder =
-        to_system_reminder_sync(&state_context, &[], &[], Some(&tool_names), None);
+        to_system_reminder_sync(&state_context, &[], &[], Some(&tool_names), None, None);
     let reminder = system_reminder.expect("should produce a system-reminder");
     assert!(
         reminder.contains("## Running Subagents"),
@@ -476,7 +467,7 @@ async fn background_tasks_are_labeled_by_creator_tool() {
         },
     )
     .await;
-    let reminder = to_system_reminder_sync(&state_context, &[], &[], None, None)
+    let reminder = to_system_reminder_sync(&state_context, &[], &[], None, None, None)
         .expect("should produce a system-reminder");
     assert!(
         reminder.contains("## Running Background Tasks"),
@@ -514,7 +505,7 @@ async fn no_subagents_means_no_section() {
         },
     )
     .await;
-    let system_reminder = to_system_reminder_sync(&state_context, &[], &[], None, None);
+    let system_reminder = to_system_reminder_sync(&state_context, &[], &[], None, None, None);
     let reminder = system_reminder.expect("should produce a system-reminder for edited files");
     assert!(
         !reminder.contains("## Running Subagents"),

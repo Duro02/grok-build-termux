@@ -188,6 +188,102 @@ mod grove_fuse_tests {
         )));
         assert!(!is_grove_fuse_mount(Path::new("/tmp/not-a-grove-path")));
     }
+
+    #[test]
+    fn grove_fuse_without_linked_status_forces_git() {
+        let t = resolve_grove_fuse_creation_type(
+            Path::new("/var/lib/grove/repos/app/worktree"),
+            WorktreeType::Linked,
+            false,
+            &WorkingTreeMode::CleanAll,
+            "s",
+        );
+        assert_eq!(t, WorktreeType::Git);
+        let t = resolve_grove_fuse_creation_type(
+            Path::new("/tmp/not-a-grove-path"),
+            WorktreeType::Linked,
+            true,
+            &WorkingTreeMode::CleanAll,
+            "s",
+        );
+        assert_eq!(t, WorktreeType::Linked);
+    }
+
+    #[test]
+    fn grove_fuse_linked_preserve_keeps_linked_not_git() {
+        let src = Path::new("/var/lib/grove/repos/app/worktree");
+        assert_eq!(
+            resolve_grove_fuse_creation_type_for(
+                WorktreeType::Linked,
+                true,
+                &WorkingTreeMode::PreserveWorkingTree,
+                src,
+                "s",
+            ),
+            WorktreeType::Linked
+        );
+        assert_eq!(
+            resolve_grove_fuse_creation_type_for(
+                WorktreeType::Linked,
+                false,
+                &WorkingTreeMode::PreserveWorkingTree,
+                src,
+                "s",
+            ),
+            WorktreeType::Git
+        );
+    }
+}
+
+fn enabled_grove_opts() -> xai_fast_worktree::NfsWorktreeOpts {
+    xai_fast_worktree::NfsWorktreeOpts {
+        enabled: true,
+        ..xai_fast_worktree::NfsWorktreeOpts::default()
+    }
+}
+
+/// Keep GitCheckout for ordinary grove FUSE sources. Linked local-codebase
+/// views (status-confirmed) stay Linked so CreateWorktree runs. Preserve on
+/// a confirmed linked view must not become Git (clean checkout); later
+/// layers decline it.
+fn resolve_grove_fuse_creation_type(
+    source: &Path,
+    requested: WorktreeType,
+    grove_enabled: bool,
+    working_tree: &WorkingTreeMode,
+    session_id: &str,
+) -> WorktreeType {
+    if !is_grove_fuse_mount(source) {
+        return requested;
+    }
+    let linked = grove_enabled
+        && xai_fast_worktree::source_is_linked_local_view(&enabled_grove_opts(), source);
+    resolve_grove_fuse_creation_type_for(requested, linked, working_tree, source, session_id)
+}
+
+fn resolve_grove_fuse_creation_type_for(
+    requested: WorktreeType,
+    linked_confirmed: bool,
+    _working_tree: &WorkingTreeMode,
+    source: &Path,
+    session_id: &str,
+) -> WorktreeType {
+    if linked_confirmed {
+        tracing::info!(
+            target: WORKTREE_LOG,
+            session_id,
+            source = %source.display(),
+            "grove linked local-codebase view: using CreateWorktree"
+        );
+        return requested;
+    }
+    tracing::info!(
+        target: WORKTREE_LOG,
+        session_id,
+        source = %source.display(),
+        "grove FUSE source: disabling fast-worktree CoW, using git checkout"
+    );
+    WorktreeType::Git
 }
 
 /// Map a [`WorktreeType`] to the fast-worktree crate's `CreationMode`.
@@ -1040,18 +1136,15 @@ pub async fn create_worktree_streaming<N: WorktreeNotificationSender>(
     let git_ref = req.git_ref.clone();
     // Determine worktree type, preserving the .git.is_dir() guard for Standalone mode.
     // A linked worktree has a `.git` *file* pointing to the main repo; a real repo has a `.git` *directory*.
+    let grove_enabled = req.grove_worktree.unwrap_or(false);
     let requested_type = req.worktree_type.unwrap_or(WorktreeType::Linked);
-    let requested_type = if is_grove_fuse_mount(Path::new(&req.source_path)) {
-        tracing::info!(
-            target: WORKTREE_LOG,
-            session_id = %session_id,
-            source = %req.source_path,
-            "grove FUSE source: disabling fast-worktree CoW, using git checkout"
-        );
-        WorktreeType::Git
-    } else {
-        requested_type
-    };
+    let requested_type = resolve_grove_fuse_creation_type(
+        Path::new(&req.source_path),
+        requested_type,
+        grove_enabled,
+        &working_tree_mode,
+        session_id.as_str(),
+    );
     let git_dir_is_directory = std::path::Path::new(&req.source_path).join(".git").is_dir();
     let creation_mode = if requested_type == WorktreeType::Standalone {
         if git_dir_is_directory {
@@ -1109,6 +1202,9 @@ pub async fn create_worktree_streaming<N: WorktreeNotificationSender>(
         // Wire up btrfs delegate for rootless snapshot support.
         if let Some(delegate) = btrfs_delegate {
             builder = builder.btrfs_delegate(delegate);
+        }
+        if grove_enabled {
+            builder = builder.grove_worktree(enabled_grove_opts());
         }
 
         builder.create()
@@ -1483,6 +1579,8 @@ pub struct CreateWorktreeFromWorktreeRequest {
     /// When absent, an automatic `YYYY-MM-DD-<uuid>` label is generated.
     #[serde(default)]
     pub label: Option<String>,
+    #[serde(default, alias = "nfsWorktree", alias = "nfs_worktree")]
+    pub grove_worktree: Option<bool>,
     /// Optional cancellation token. When tripped, the file copy is aborted
     /// mid-flight and the partial worktree is cleaned up.
     #[serde(skip)]
@@ -1505,6 +1603,7 @@ impl CreateWorktreeFromWorktreeRequest {
             git_ref: self.git_ref,
             worktree_type: self.worktree_type,
             label: self.label,
+            grove_worktree: self.grove_worktree,
         }
     }
 }
@@ -1518,6 +1617,7 @@ impl From<CreateWorktreeFromWorktreeRequestWire> for CreateWorktreeFromWorktreeR
             git_ref: w.git_ref,
             worktree_type: w.worktree_type,
             label: w.label,
+            grove_worktree: w.grove_worktree,
             // Runtime-only fields, never on the wire.
             cancellation_token: None,
             resolved_dest_path: None,
@@ -1768,6 +1868,7 @@ pub async fn create_worktree_from_worktree_streaming<N: WorktreeNotificationSend
         );
         let session_id_for_builder = session_id.clone();
         let btrfs_delegate = btrfs_delegate_from_env();
+        let grove_enabled = req.grove_worktree.unwrap_or(false);
         let label_for_meta = label_from_path(&worktree_path_str);
         let label_metadata = build_label_metadata(&label_for_meta, false);
         tokio::task::spawn_blocking(move || {
@@ -1789,6 +1890,9 @@ pub async fn create_worktree_from_worktree_streaming<N: WorktreeNotificationSend
 
             if let Some(delegate) = btrfs_delegate {
                 builder = builder.btrfs_delegate(delegate);
+            }
+            if grove_enabled {
+                builder = builder.grove_worktree(enabled_grove_opts());
             }
 
             builder.create()
@@ -1995,6 +2099,7 @@ pub async fn create_worktree_from_worktree_sync(
     );
     let session_id_for_builder = req.new_session_id.clone();
     let btrfs_delegate = btrfs_delegate_from_env();
+    let grove_enabled = req.grove_worktree.unwrap_or(false);
     let label_for_meta = label_from_path(&worktree_path_str);
     let label_metadata = build_label_metadata(&label_for_meta, false);
     let report = tokio::task::spawn_blocking(move || {
@@ -2012,6 +2117,9 @@ pub async fn create_worktree_from_worktree_sync(
 
         if let Some(delegate) = btrfs_delegate {
             builder = builder.btrfs_delegate(delegate);
+        }
+        if grove_enabled {
+            builder = builder.grove_worktree(enabled_grove_opts());
         }
 
         builder.create()
@@ -2511,6 +2619,59 @@ pub fn gc_worktrees_mgmt(
         ..Default::default()
     };
     fw_gc_worktrees(&db, &opts)
+}
+
+fn resolve_mgmt_path(id_or_path: &str) -> Result<std::path::PathBuf> {
+    // DB lookup only. resolve_worktree_by_id_or_path canonicalizes and
+    // exists() on path misses, which hangs on a wedged NFS dest before
+    // salvage/clean/detach can run.
+    let db = open_db()?;
+    if let Some(rec) = db.get(id_or_path)? {
+        return Ok(rec.path);
+    }
+    Ok(std::path::PathBuf::from(id_or_path))
+}
+
+pub fn detach_worktree_mgmt(
+    id_or_path: &str,
+    allow_copy: bool,
+) -> Result<xai_fast_worktree::DetachReply> {
+    let path = resolve_mgmt_path(id_or_path)?;
+    let client = xai_fast_worktree::NfsWorktreeClient::from_opts(
+        &xai_fast_worktree::NfsWorktreeOpts::default(),
+    );
+    client.detach_worktree(&path, allow_copy)
+}
+
+pub fn salvage_worktree_mgmt(
+    id_or_path: &str,
+    out: &str,
+) -> Result<xai_fast_worktree::SalvageReply> {
+    let path = resolve_mgmt_path(id_or_path)?;
+    let client = xai_fast_worktree::NfsWorktreeClient::from_opts(
+        &xai_fast_worktree::NfsWorktreeOpts::default(),
+    );
+    match client.salvage_worktree(&path, std::path::Path::new(out)) {
+        Ok(r) => Ok(r),
+        Err(e) if e.to_string().contains("unreachable") => {
+            xai_fast_worktree::local_salvage(&path, std::path::Path::new(out))
+        }
+        Err(e) => Err(e),
+    }
+}
+
+pub fn clean_artifacts_mgmt(id_or_path: &str) -> Result<xai_fast_worktree::CleanArtifactsReply> {
+    let path = resolve_mgmt_path(id_or_path)?;
+    let client = xai_fast_worktree::NfsWorktreeClient::from_opts(
+        &xai_fast_worktree::NfsWorktreeOpts::default(),
+    );
+    match client.clean_artifacts(&path) {
+        Ok(r) => Ok(r),
+        Err(e) if e.to_string().contains("unreachable") => {
+            xai_fast_worktree::local_clean_artifacts(&path)
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// Map settings → resolve layer (shared by shell + workspace).
@@ -3133,6 +3294,7 @@ mod tests {
             ignored_skip_patterns: vec![],
             worktree_type: None,
             label: None,
+            grove_worktree: None,
         };
 
         let result = prepare_worktree_creation(&req).await;
@@ -3189,6 +3351,7 @@ mod tests {
             ignored_skip_patterns: vec![],
             worktree_type: None,
             label: None,
+            grove_worktree: None,
         };
 
         let notifier = MarkerProbeNotifier {
@@ -3231,6 +3394,7 @@ mod tests {
             git_ref: None,
             worktree_type: None,
             label: None,
+            grove_worktree: None,
             cancellation_token: None,
             resolved_dest_path: None,
         };
@@ -3295,6 +3459,7 @@ mod tests {
             ignored_skip_patterns: vec![],
             worktree_type: None,
             label: None,
+            grove_worktree: None,
         };
         let notifier = TerminalStatusCounter {
             terminal: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),

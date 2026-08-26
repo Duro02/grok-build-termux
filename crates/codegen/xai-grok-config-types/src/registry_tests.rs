@@ -53,13 +53,14 @@ fn registered_settings() {
             ("voice_mode", ("GROK_VOICE_MODE", true)),
             ("write_file", ("GROK_WRITE_FILE", true)),
             ("feedback", ("GROK_FEEDBACK_ENABLED", true)),
+            ("feedback_trace_card", ("GROK_FEEDBACK_TRACE_CARD", false)),
             ("turn_summary", ("GROK_TURN_SUMMARY", true)),
             ("cancel_rewind", ("GROK_CANCEL_REWIND", true)),
             (
                 "compaction_verbatim_input",
                 ("GROK_COMPACTION_VERBATIM_INPUT", true),
             ),
-            ("two_pass_compaction", ("GROK_TWO_PASS_COMPACTION", false)),
+            ("two_pass_compaction", ("GROK_TWO_PASS_COMPACTION", true)),
             ("backend_tools", ("GROK_BACKEND_SEARCH", true)),
             ("auto_wake", ("GROK_AUTO_WAKE", true)),
             (
@@ -86,6 +87,7 @@ fn every_registered_feature_reads_its_own_remote_setting() {
             Feature::VoiceMode => settings.voice_mode_enabled = Some(value),
             Feature::WriteFile => settings.write_file_enabled = Some(value),
             Feature::Feedback => settings.feedback_enabled = Some(value),
+            Feature::FeedbackTraceCard => settings.feedback_trace_card_enabled = Some(value),
             Feature::TurnSummary => settings.turn_summary = Some(value),
             Feature::CancelRewind => settings.cancel_rewind_enabled = Some(value),
             Feature::CompactionVerbatimInput => settings.compaction_verbatim_input = Some(value),

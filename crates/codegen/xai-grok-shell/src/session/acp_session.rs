@@ -93,6 +93,8 @@ pub(crate) use types::*;
 pub use types::{TodoGateDecision, TodoGateReason};
 #[path = "acp_session_impl/goal.rs"]
 mod goal;
+#[path = "acp_session_impl/named_workflow_args.rs"]
+mod named_workflow_args;
 #[path = "acp_session_impl/tool_layer_images.rs"]
 mod tool_layer_images;
 #[path = "acp_session_impl/turn.rs"]
@@ -104,6 +106,11 @@ use tool_layer_images::*;
 mod auth_retry;
 pub(crate) use auth_retry::{
     AuthRetryDecision, AuthRetrySchedule, human_duration, pace_uncharged_resubmit,
+};
+#[path = "acp_session_impl/rate_limit_waits.rs"]
+mod rate_limit_waits;
+pub(crate) use rate_limit_waits::{
+    RateLimitWaitBudget, RateLimitWaitConfig, RateLimitWaitDecision,
 };
 #[path = "acp_session_impl/image_strip.rs"]
 mod image_strip;
@@ -126,6 +133,8 @@ pub(super) use prompt_queue::QueueInputRequest;
 mod hooks_plugins;
 #[path = "acp_session_impl/mcp.rs"]
 mod mcp;
+#[path = "acp_session_impl/mcp_failed_reminder.rs"]
+mod mcp_failed_reminder;
 #[path = "acp_session_impl/model_switch.rs"]
 mod model_switch;
 #[path = "acp_session_impl/slash_exec.rs"]
@@ -510,6 +519,7 @@ fn managed_gateway_error_to_tool_error(
         }
     }
 }
+#[allow(clippy::disallowed_methods)]
 #[cfg(test)]
 mod managed_gateway_error_tests {
     use super::*;
@@ -743,12 +753,9 @@ pub(crate) struct SessionActor {
     /// per-attachment policy may.
     pub(crate) delivery_tools: std::cell::RefCell<Vec<String>>,
     /// `nonInteractive` for the CURRENT attachment (same lifecycle as
-    /// `delivery_tools`). Drives operational can-a-human-act-now decisions —
-    /// today the MCP OAuth interactivity on (re)init, which pairs with the
-    /// `UpdateMcpServers` sent by the same resident load. The frozen
     /// `startup_hints.non_interactive` keeps governing spawn-time structure
     /// (system prompt variant, user-message prefix, git-status mode).
-    pub(crate) attach_non_interactive: std::cell::Cell<bool>,
+    pub(crate) attach_non_interactive: std::rc::Rc<std::cell::Cell<bool>>,
     /// Verbatim mirror-fork override: when `Some`, every turn sends this exact
     /// parent tool schema instead of the locally-built toolset, keeping the
     /// child's request prefix byte-identical to the parent for radix cache reuse.
@@ -760,11 +767,11 @@ pub(crate) struct SessionActor {
     pub(crate) memory: super::memory_state::SessionMemory,
     /// Telemetry counters for session summary.
     pub(crate) session_start: std::time::Instant,
-    /// Per-chunk idle timeout for inference streaming. If no SSE chunk is received
-    /// within this duration, the stream is aborted with a non-retryable error.
-    /// Resolved at construction: per-model config.toml → remote settings → 300s default.
+    /// Per-chunk idle timeout for inference streaming; a stall aborts the stream.
     pub(crate) inference_idle_timeout: Duration,
     pub(crate) max_retries: u32,
+    /// Fixed bounds on a subagent turn's 429 waiting.
+    pub(crate) rate_limit_waits: RateLimitWaitConfig,
     /// Maximum tool-use turns before the session stops. `None` = unlimited.
     pub(crate) max_turns: Option<usize>,
     /// Pending mid-turn interjections from the user (Ctrl+Enter).
@@ -968,10 +975,10 @@ pub(crate) struct SessionActor {
     /// Shared MCP tool metadata for the BM25 search index. Updated after MCP init.
     pub(crate) tool_metadata_snapshot:
         Arc<std::sync::Mutex<crate::session::tool_index::ToolMetadataSnapshot>>,
-    /// Tracks which servers have been announced via system-reminder, for
-    /// change detection. Maps server_name -> (tool_count, description_hash).
-    pub(crate) mcp_announced_servers:
-        Mutex<HashMap<String, xai_grok_tools::implementations::search_tool::ServerFingerprint>>,
+    /// MCP servers (connected and failed) already announced via
+    /// system-reminder — see [`crate::session::announcement_state::McpAnnounced`]
+    /// for the dedupe semantics.
+    pub(crate) mcp_announcements: Mutex<crate::session::announcement_state::McpAnnounced>,
     /// Controls whether MCP server reminders inject only changes (Delta)
     /// or the full server list (Full). Read from `MCP_REMINDER_MODE` env var.
     pub(crate) mcp_reminder_mode: McpReminderMode,
@@ -1142,6 +1149,9 @@ pub(crate) struct SessionActor {
     /// tests and other constructor sites use `SamplerHandle::noop()`.
     /// All inference flows through this handle.
     pub(crate) sampler_handle: xai_grok_sampler::SamplerHandle,
+    /// Turn-sampling gate: `None` is the main session (ungated), `Some` is the process
+    /// tree's shared sampling semaphore. See `acquire_subagent_sampling_permit`.
+    pub(crate) sampling_gate: Option<Arc<tokio::sync::Semaphore>>,
     /// Cached recipe for constructing this session's [`xai_grok_agent::Agent`].
     ///
     /// Populated once at session spawn and then reused by
@@ -2004,6 +2014,9 @@ mod load_user_prompts_tests;
 #[path = "acp_session_tests/mcp_connecting_reminder_tests.rs"]
 mod mcp_connecting_reminder_tests;
 #[cfg(test)]
+#[path = "acp_session_tests/mcp_failed_reminder_tests.rs"]
+mod mcp_failed_reminder_tests;
+#[cfg(test)]
 #[path = "acp_session_tests/media_gen_auth_retry_tests.rs"]
 mod media_gen_auth_retry_tests;
 #[cfg(test)]
@@ -2018,6 +2031,9 @@ mod parallel_dispatch_tests;
 #[cfg(test)]
 #[path = "acp_session_tests/prompt_context_persistence_tests.rs"]
 mod prompt_context_persistence_tests;
+#[cfg(test)]
+#[path = "acp_session_tests/turn/rate_limit_backoff_tests.rs"]
+mod rate_limit_backoff_tests;
 #[cfg(test)]
 #[path = "acp_session_tests/session_thread_tests.rs"]
 mod session_thread_tests;

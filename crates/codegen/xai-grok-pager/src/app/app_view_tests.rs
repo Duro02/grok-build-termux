@@ -71,7 +71,7 @@ fn app_draw_drains_deferred_release_after_flush() {
     )
     .expect("channel-backed terminal requires no tty");
     let mut app = test_app();
-    crate::memory_release::request_release_after_draw_with("unit-test-defer");
+    crate::memory_release::request_release_after_draw("unit-test-defer");
     let before = test_support::calls();
     app.draw(&mut terminal);
     assert_eq!(
@@ -258,7 +258,10 @@ pub(crate) fn test_app() -> AppView {
         foreign_session_scan_seq: 0,
         foreign_scan_coordinator: Default::default(),
         session_picker_lanes: Default::default(),
-        session_picker_detail_generation: 0,
+        session_picker_detail_seq: 0,
+        picker_generation_counter: 0,
+        session_picker_generation: 0,
+        dashboard_session_picker: None,
         session_picker_entries_query: None,
         session_picker_pending_delete: None,
         welcome_tick: 0,
@@ -274,6 +277,7 @@ pub(crate) fn test_app() -> AppView {
         import_claude_modal: None,
         welcome_doc_viewer: None,
         screen_mode: ScreenMode::Inline,
+        pending_screen_mode_switch: None,
         pending_effects: Vec::new(),
         pending_editor: None,
         pending_pager_path: None,
@@ -283,6 +287,7 @@ pub(crate) fn test_app() -> AppView {
         show_resolved_model: true,
         sharing_enabled: false,
         plugin_cta_enabled: false,
+        plugin_cta_marketplace: None,
         workspace_dashboard_enabled: false,
         usage_visible: true,
         has_external_auth_provider: false,
@@ -301,6 +306,9 @@ pub(crate) fn test_app() -> AppView {
         scheduler_background_loops_seed: true,
         cancel_rewind_enabled: true,
         session_recap_available: false,
+        shell_feedback_trace_offer: false,
+        feedback_trace_choice_latched: false,
+        feedback_trace_upload_pending: None,
         tutorial: None,
         dashboard: None,
         dashboard_return: None,
@@ -748,6 +756,8 @@ fn tick_demand_fast_while_modal_session_picker_loads() {
             content_results: None,
             content_loading: false,
             deep_search_seq: 0,
+            generation: 0,
+            detail_seq: 0,
             entries_query: None,
             source_filter: crate::views::session_picker::SourceFilter::default(),
             pending_delete: None,
@@ -773,6 +783,7 @@ fn tick_demand_fast_while_modal_session_picker_loads() {
         worktree_label: None,
         last_turn_summary: None,
         last_recap: None,
+        session_kind: None,
         card_detail: None,
     };
     if let Some(crate::views::modal::ActiveModal::SessionPicker { entries, .. }) =
@@ -2109,6 +2120,7 @@ fn welcome_session_entry(id: &str) -> SessionPickerEntry {
         worktree_label: None,
         last_turn_summary: None,
         last_recap: None,
+        session_kind: None,
         card_detail: None,
     }
 }
@@ -3068,6 +3080,23 @@ fn esc_cancels_running_wake_turn_while_pane_is_idle() {
     );
 }
 #[test]
+fn streaming_wake_turn_counts_as_running_for_minimal_commit() {
+    let mut app = test_app_with_agent();
+    let id = super::super::agent::AgentId(0);
+    let agent = app.agents.get_mut(&id).unwrap();
+    assert!(agent.session.state.is_idle());
+    assert!(!crate::minimal_api::is_turn_or_wake_running(agent));
+    agent.note_streaming_wake_turn("subagent-completed-abc");
+    assert!(
+        crate::minimal_api::is_turn_or_wake_running(agent),
+        "a streaming wake turn must hold the minimal commit frontier"
+    );
+    agent.running_wake_turn = None;
+    assert!(!crate::minimal_api::is_turn_or_wake_running(agent));
+    agent.session.state = AgentState::TurnRunning;
+    assert!(crate::minimal_api::is_turn_or_wake_running(agent));
+}
+#[test]
 fn esc_from_prompt_pane_running_turn_with_draft_cancels_preserving_draft() {
     let mut app = test_app_with_agent();
     let id = super::super::agent::AgentId(0);
@@ -3297,12 +3326,15 @@ fn idle_non_empty_double_esc_clears_prompt() {
     let effects = crate::app::dispatch::dispatch(Action::ClearPrompt, &mut app);
     assert!(effects.is_empty());
     assert!(app.agents[&id].prompt.textarea.text().is_empty());
+    assert!(
+        app.agents[&id].session.prompt_history.is_empty(),
+        "the cleared draft goes to the stash, never to the history"
+    );
     assert_eq!(
         app.agents[&id]
-            .session
-            .prompt_history
-            .first()
-            .map(String::as_str),
+            .prompt_stash
+            .as_ref()
+            .map(|entry| entry.prompt.text.as_str()),
         Some("draft to clear")
     );
 }
@@ -3804,6 +3836,7 @@ fn idle_scrollback_pane_esc_with_history_search_does_not_arm_rewind() {
         .push_block(crate::scrollback::block::RenderBlock::user_prompt(
             "earlier",
         ));
+    agent.session.prompt_history = vec!["earlier".into()];
     assert!(agent.prompt.textarea.text().is_empty());
     let history = agent.combined_prompt_history();
     let current_text = agent.prompt.text().to_string();
@@ -5471,6 +5504,16 @@ fn neutral_overlay_app() -> (AppView, super::super::agent::AgentId) {
     }
     (app, id)
 }
+fn open_agents_modal() -> crate::views::agents_modal::AgentsModalState {
+    crate::views::agents_modal::AgentsModalState::new(
+        std::path::Path::new("/nonexistent"),
+        &std::collections::HashMap::new(),
+        &BundleState::default(),
+        None,
+        None,
+        None,
+    )
+}
 /// With a pending input overlay, neither `q` nor `Esc` is consumed as a
 /// dashboard-overlay exit — both fall through to the agent (the scrollback
 /// handler, not the overlay handler).
@@ -5661,9 +5704,10 @@ fn overlay_left_arrow_in_scrollback_does_not_exit() {
         "Left in scrollback must reach the agent, got {outcome:?}",
     );
 }
-/// An open modal (extensions modal or `active_modal`) makes
-/// `is_empty_focused_prompt` false even on an empty, prompt-focused
-/// composer, so the modal — not the overlay back-out — owns Esc/Left.
+/// An open modal (extensions, `/agents`, persona detail, block viewer, or
+/// `active_modal`) makes `is_empty_focused_prompt` false even on an empty,
+/// prompt-focused composer, so the modal — not the overlay back-out — owns
+/// Esc/Left.
 #[test]
 fn overlay_open_modal_fails_empty_focused_prompt_guard() {
     let (mut app, id) = neutral_overlay_app();
@@ -5681,6 +5725,27 @@ fn overlay_open_modal_fails_empty_focused_prompt_guard() {
         "an open extensions modal must fail the guard",
     );
     agent.extensions_modal = None;
+    agent.agents_modal = Some(open_agents_modal());
+    assert!(
+        !agent.is_empty_focused_prompt(),
+        "an open agents modal must fail the guard",
+    );
+    agent.agents_modal = None;
+    agent.persona_detail =
+        Some(crate::views::persona_detail::PersonaDetailState::from_name_only("researcher"));
+    assert!(
+        !agent.is_empty_focused_prompt(),
+        "an open persona detail must fail the guard",
+    );
+    agent.persona_detail = None;
+    agent.block_viewer = Some(crate::views::block_viewer::BlockViewerPane::for_plain_text(
+        "t", "content",
+    ));
+    assert!(
+        !agent.is_empty_focused_prompt(),
+        "an open block viewer must fail the guard",
+    );
+    agent.block_viewer = None;
     agent.active_modal = Some(crate::views::modal::ActiveModal::CommandPalette {
         entries: Vec::new(),
         state: crate::views::picker::PickerState::default(),
@@ -5753,6 +5818,75 @@ fn overlay_modal_open_esc_left_do_not_exit() {
             "{code:?} with active_modal open must not back out, got {outcome:?}",
         );
     }
+    let (mut app, id) = neutral_overlay_app();
+    {
+        let agent = app.agents.get_mut(&id).unwrap();
+        agent.active_pane = crate::app::agent_view::AgentPane::Prompt;
+        agent.agents_modal = Some(open_agents_modal());
+    }
+    let outcome = app.handle_input(&key_event(KeyCode::Esc, KeyModifiers::NONE));
+    assert!(
+        !matches!(outcome, InputOutcome::Action(Action::DashboardOverlayExit)),
+        "Esc with the agents modal open must not back out, got {outcome:?}",
+    );
+    assert!(
+        app.agents[&id].agents_modal.is_none(),
+        "Esc must reach the agents modal handler and close it",
+    );
+    assert_eq!(
+        app.dashboard.as_ref().and_then(|d| d.attached_agent),
+        Some(id),
+        "closing /agents must leave the dashboard overlay attached",
+    );
+    let (mut app, id) = neutral_overlay_app();
+    {
+        let agent = app.agents.get_mut(&id).unwrap();
+        agent.active_pane = crate::app::agent_view::AgentPane::Prompt;
+        agent.agents_modal = Some(open_agents_modal());
+    }
+    let outcome = app.handle_input(&key_event(KeyCode::Left, KeyModifiers::NONE));
+    assert!(
+        !matches!(outcome, InputOutcome::Action(Action::DashboardOverlayExit)),
+        "Left with the agents modal open must not back out, got {outcome:?}",
+    );
+    assert!(
+        app.agents[&id].agents_modal.is_some(),
+        "Left must reach the agents modal, keeping it open",
+    );
+}
+/// `/agents` open on a scrollback-focused overlay must own Esc (close the
+/// modal) rather than the neutral-scrollback overlay exit. `is_bare_scrollback`
+/// used to omit `agents_modal`, so this path looped dashboard ↔ conversation.
+#[test]
+fn overlay_agents_modal_owns_esc_from_scrollback() {
+    let (mut app, id) = neutral_overlay_app();
+    {
+        let agent = app.agents.get_mut(&id).unwrap();
+        assert_eq!(
+            agent.active_pane,
+            crate::app::agent_view::AgentPane::Scrollback,
+            "fixture starts on scrollback (neutral overlay exit state)",
+        );
+        agent.agents_modal = Some(open_agents_modal());
+        assert!(
+            !agent.is_bare_scrollback(),
+            "an open agents modal must fail the bare-scrollback overlay-exit guard",
+        );
+    }
+    let outcome = app.handle_input(&key_event(KeyCode::Esc, KeyModifiers::NONE));
+    assert!(
+        !matches!(outcome, InputOutcome::Action(Action::DashboardOverlayExit)),
+        "Esc with /agents open on scrollback must not back out, got {outcome:?}",
+    );
+    assert!(
+        app.agents[&id].agents_modal.is_none(),
+        "Esc must close the agents modal",
+    );
+    assert_eq!(
+        app.dashboard.as_ref().and_then(|d| d.attached_agent),
+        Some(id),
+        "closing /agents must leave the dashboard overlay attached",
+    );
 }
 /// The graduated plan/Q&A back-out also defers to an open modal: with a
 /// single-question Q&A overlay at its back-out top AND a modal open, both
@@ -5782,6 +5916,15 @@ fn graduated_back_out_defers_to_open_modal() {
         );
     }
     app.agents.get_mut(&id).unwrap().extensions_modal = None;
+    app.agents.get_mut(&id).unwrap().agents_modal = Some(open_agents_modal());
+    {
+        let a = app.agents.get(&id).unwrap();
+        assert!(
+            !a.overlay_esc_backs_out() && !a.overlay_left_backs_out(),
+            "an open agents modal must suppress the graduated back-out",
+        );
+    }
+    app.agents.get_mut(&id).unwrap().agents_modal = None;
     app.agents.get_mut(&id).unwrap().active_modal =
         Some(crate::views::modal::ActiveModal::CommandPalette {
             entries: Vec::new(),
@@ -6505,6 +6648,7 @@ fn welcome_picker_f_cycle_disabled_under_chat_mode() {
         worktree_label: None,
         last_turn_summary: None,
         last_recap: None,
+        session_kind: None,
         card_detail: None,
     };
     let f_key = Event::Key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE));

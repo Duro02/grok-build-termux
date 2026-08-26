@@ -288,7 +288,7 @@ pub struct AgentArgs {
     #[arg(long = "agent-profile", value_name = "PATH")]
     pub agent_profile: Option<PathBuf>,
     /// Load a plugin from this directory for this process only (repeatable).
-    /// Highest-priority plugin scope; always trusted — hooks and MCP servers
+    /// Highest-priority plugin scope; always trusted: hooks and MCP servers
     /// activate without a prompt. Used by the Agent SDKs to inject
     /// per-connection plugins.
     #[arg(long = "plugin-dir", value_name = "DIR", value_hint = ValueHint::DirPath)]
@@ -394,7 +394,7 @@ pub struct LeaderArgs {
     pub no_exit_on_disconnect: bool,
     /// Defer the grok.com relay WebSocket until the first headless IPC client
     /// registers. Without this flag the leader connects the relay eagerly at
-    /// startup — required for bare leaders (headless remote env / systemd) that
+    /// startup, required for bare leaders (headless remote env / systemd) that
     /// receive remote prompts *through* the relay. Passed by leaders auto-spawned
     /// from interactive clients (TUI/IDE), which only need the relay if a
     /// headless client appears.
@@ -536,9 +536,9 @@ pub struct PagerArgs {
     /// Extra rules to append to the system prompt.
     #[clap(long = "rules", alias = "append-system-prompt")]
     pub rules: Option<String>,
-    /// Compaction mode [summary|transcript|segments]: `summary` (default) adds
+    /// Compaction mode [summary|transcript|segments]: `summary` adds
     /// no pointer; `transcript` points at the raw transcript; `segments`
-    /// persists per-segment markdown to grep. Sets `GROK_COMPACTION_MODE`.
+    /// (default) persists per-segment markdown to grep. Sets `GROK_COMPACTION_MODE`.
     #[clap(long = "compaction-mode", value_name = "MODE", hide = true)]
     pub compaction_mode: Option<String>,
     /// Segments verbatim detail [none|minimal|balanced|verbose] (default
@@ -596,7 +596,7 @@ pub struct PagerArgs {
     /// Use a specific session UUID for a **new** conversation (must be a valid
     /// UUID and must not already exist under the target session directory).
     /// With `--resume`/`--continue`, only valid together with `--fork-session`
-    /// (names the forked session). Does not resume existing sessions — use
+    /// (names the forked session). Does not resume existing sessions, use
     /// `--resume` / `--continue` instead.
     #[arg(short = 's', long = "session-id", value_name = "SESSION_ID")]
     pub session_id: Option<String>,
@@ -763,12 +763,12 @@ pub struct PagerArgs {
     /// Experimental: scrollback-native rendering. Finalized blocks are printed
     /// into the terminal's native scrollback (use the terminal's own scroll /
     /// selection); a small pinned region holds the prompt + running turn.
-    /// Session-scoped only — does not write config. To default plain `grok` to
+    /// Session-scoped only, does not write config. To default plain `grok` to
     /// minimal, set `[ui] screen_mode = "minimal"` in ~/.grok/config.toml.
     #[arg(long = "minimal")]
     pub minimal: bool,
     /// Open in the standard fullscreen TUI for this session, overriding a
-    /// config `[ui] screen_mode = "minimal"` preference. Session-scoped only —
+    /// config `[ui] screen_mode = "minimal"` preference. Session-scoped only,
     /// does not write config. Fullscreen-vs-inline still follows the alt-screen
     /// policy (--no-alt-screen, [terminal] alt_screen, terminal auto-detection).
     #[arg(long = "fullscreen", conflicts_with = "minimal")]
@@ -921,6 +921,18 @@ impl PagerArgs {
     pub fn resume_most_recent(&self) -> bool {
         self.resume_session.as_deref() == Some("")
     }
+    pub(crate) fn local_resume_selection(
+        &self,
+    ) -> xai_grok_shell::session::persistence::RecentSessionSelection {
+        use xai_grok_shell::session::unified_list::HeadlessPolicy;
+        let policy =
+            if self.single.is_some() || self.prompt_json.is_some() || self.prompt_file.is_some() {
+                HeadlessPolicy::Include
+            } else {
+                HeadlessPolicy::Exclude
+            };
+        xai_grok_shell::session::persistence::RecentSessionSelection::from_headless_policy(policy)
+    }
     /// Classify flags for sandbox profile lookup on an existing session.
     ///
     /// Uses [`Self::session_startup_intent`]; invalid combos fall through to
@@ -984,7 +996,7 @@ impl PagerArgs {
             return Ok(());
         };
         use crate::app::session_title_resolve::{PinnedResumeTarget, presandbox_resume_target};
-        let pinned = presandbox_resume_target(&target, cwd)?;
+        let pinned = presandbox_resume_target(&target, cwd, self.local_resume_selection())?;
         self.resume_target_pinned = true;
         if let PinnedResumeTarget::Title {
             ref id,
@@ -1030,7 +1042,10 @@ impl PagerArgs {
                 )
             }
             ResumeTarget::MostRecentForCwd => {
-                xai_grok_shell::session::persistence::resumed_session_sandbox_profile(None, cwd)
+                xai_grok_shell::session::persistence::resolve_recent_session_sandbox_profile(
+                    cwd,
+                    self.local_resume_selection(),
+                )
             }
             ResumeTarget::None => None,
         }

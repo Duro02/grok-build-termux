@@ -70,22 +70,41 @@ pub fn permission_mode_from_ui_if_set(ui: &TomlValue) -> Option<PermissionMode> 
     Some(PermissionMode::Ask)
 }
 
-/// Pure resolver: effective TOML `[ui]` permission keys (if any) >
-/// remote `permission_mode` > `Ask`. CLI is applied above this by the launch
-/// helpers. Managed/requirements TOML already deep-merge into effective config.
-pub fn resolve_permission_mode(
+/// Shipped TUI default when CLI, TOML, and remote all leave the mode unset.
+pub(crate) const DEFAULT_INTERACTIVE_PERMISSION_MODE: PermissionMode = PermissionMode::Ask;
+
+pub(crate) const ENV_DEFAULT_PERMISSION_MODE: &str = "GROK_DEFAULT_PERMISSION_MODE";
+
+/// Env override for [`DEFAULT_INTERACTIVE_PERMISSION_MODE`].
+/// `always-approve` and unknown values are ignored so bypass cannot inherit
+/// from the process environment.
+pub fn default_interactive_permission_mode() -> PermissionMode {
+    match std::env::var(ENV_DEFAULT_PERMISSION_MODE).ok().as_deref() {
+        Some("auto") => PermissionMode::Auto,
+        Some("ask") | Some("default") => PermissionMode::Ask,
+        _ => DEFAULT_INTERACTIVE_PERMISSION_MODE,
+    }
+}
+
+/// TOML `[ui]` permission keys, else remote. `None` if neither chose a mode.
+pub fn selected_permission_mode(
     effective_ui: Option<&TomlValue>,
     remote_permission_mode: Option<&str>,
-) -> PermissionMode {
+) -> Option<PermissionMode> {
     if let Some(ui) = effective_ui
         && let Some(mode) = permission_mode_from_ui_if_set(ui)
     {
-        return mode;
+        return Some(mode);
     }
-    if let Some(mode_str) = remote_permission_mode {
-        return parse_permission_mode_canonical(mode_str);
-    }
-    PermissionMode::Ask
+    remote_permission_mode.map(parse_permission_mode_canonical)
+}
+
+/// Selected mode, or Ask. Headless / display fallback — no interactive slot.
+pub(crate) fn resolve_permission_mode(
+    effective_ui: Option<&TomlValue>,
+    remote_permission_mode: Option<&str>,
+) -> PermissionMode {
+    selected_permission_mode(effective_ui, remote_permission_mode).unwrap_or(PermissionMode::Ask)
 }
 
 /// Display projection for a selected mode that did NOT win yolo/auto
@@ -119,15 +138,6 @@ pub fn resolved_display_permission_mode(
     clamped_display_permission_mode(mode)
 }
 
-fn permission_mode_from_layers(
-    layers: &crate::config::ConfigLayers,
-    remote: Option<&str>,
-) -> PermissionMode {
-    let merged = layers.effective_config_base_without_overlay();
-    let ui = merged.as_table().and_then(|t| t.get("ui"));
-    resolve_permission_mode(ui, remote)
-}
-
 /// Load selected permission mode for launch (overlay-free TOML + explicit remote).
 ///
 /// TOML `[ui]` keys win over remote; remote only when no TOML permission key.
@@ -141,11 +151,36 @@ fn permission_mode_from_layers(
 ///   approval_mode = "always-approve"   (legacy)
 ///   yolo = true                        (legacy)
 pub fn load_permission_mode(remote_permission_mode: Option<&str>) -> PermissionMode {
+    load_selected_permission_mode(remote_permission_mode).unwrap_or(PermissionMode::Ask)
+}
+
+/// Disk form of [`selected_permission_mode`]. Load failure is explicit Ask so
+/// a broken config cannot fall into the interactive default (which may be auto).
+fn load_selected_permission_mode(remote_permission_mode: Option<&str>) -> Option<PermissionMode> {
     let layers = match crate::config::ConfigLayers::load() {
         Ok(l) => l,
-        Err(_) => return PermissionMode::Ask,
+        Err(_) => return Some(PermissionMode::Ask),
     };
-    permission_mode_from_layers(&layers, remote_permission_mode)
+    selected_permission_mode_from_layers(&layers, remote_permission_mode)
+}
+
+fn selected_permission_mode_from_layers(
+    layers: &crate::config::ConfigLayers,
+    remote: Option<&str>,
+) -> Option<PermissionMode> {
+    let merged = layers.effective_config_base_without_overlay();
+    let ui = merged.as_table().and_then(|t| t.get("ui"));
+    selected_permission_mode(ui, remote)
+}
+
+/// The Ask-fallback composition production callers inline (display path,
+/// `load_permission_mode`).
+#[cfg(test)]
+fn permission_mode_from_layers(
+    layers: &crate::config::ConfigLayers,
+    remote: Option<&str>,
+) -> PermissionMode {
+    selected_permission_mode_from_layers(layers, remote).unwrap_or(PermissionMode::Ask)
 }
 
 /// Result of [`effective_yolo_for_launch`].
@@ -176,15 +211,15 @@ pub fn effective_yolo_for_launch(
     )
 }
 
-/// Whether this launch should start in **auto** permission mode (LLM/heuristic
-/// classifier — not always-approve). CLI `--permission-mode auto` beats config.
-/// Mutually exclusive with effective yolo (yolo / `--yolo` wins if both requested).
-///
-/// `remote_permission_mode` same contract as [`effective_yolo_for_launch`].
+/// Whether this launch should start in auto (not always-approve). CLI
+/// `--permission-mode auto` beats config; yolo wins if both requested.
+/// `unset_default` applies only when nothing selected a mode: Ask for
+/// headless, [`default_interactive_permission_mode`] for the TUI.
 pub fn effective_auto_for_launch(
     cli_always_approve: bool,
     cli_permission_mode: Option<&str>,
     remote_permission_mode: Option<&str>,
+    unset_default: PermissionMode,
 ) -> bool {
     // Feature gate (default ON): when the auto permission-mode feature is
     // disabled, Auto is inert — never launch into it regardless of CLI/config,
@@ -211,7 +246,9 @@ pub fn effective_auto_for_launch(
     if let Some(mode) = cli_permission_mode {
         return mode == "auto";
     }
-    load_permission_mode(remote_permission_mode).is_auto()
+    load_selected_permission_mode(remote_permission_mode)
+        .unwrap_or(unset_default)
+        .is_auto()
 }
 
 /// Whether a session should activate the **auto** permission mode: the feature
@@ -649,17 +686,28 @@ mod tests {
             .lock()
             .unwrap_or_else(|p| p.into_inner());
         unsafe { std::env::set_var("GROK_AUTO_PERMISSION_MODE", "1") };
-        assert!(effective_auto_for_launch(false, Some("auto"), None));
+        assert!(effective_auto_for_launch(
+            false,
+            Some("auto"),
+            None,
+            PermissionMode::Ask
+        ));
         assert!(
-            !effective_auto_for_launch(true, Some("auto"), None),
+            !effective_auto_for_launch(true, Some("auto"), None, PermissionMode::Ask),
             "--yolo beats auto"
         );
         assert!(!effective_auto_for_launch(
             false,
             Some("always-approve"),
-            None
+            None,
+            PermissionMode::Ask
         ));
-        assert!(!effective_auto_for_launch(false, Some("ask"), None));
+        assert!(!effective_auto_for_launch(
+            false,
+            Some("ask"),
+            None,
+            PermissionMode::Ask
+        ));
         unsafe { std::env::remove_var("GROK_AUTO_PERMISSION_MODE") };
     }
 
@@ -697,13 +745,59 @@ mod tests {
             .unwrap_or_else(|p| p.into_inner());
         unsafe { std::env::set_var("GROK_AUTO_PERMISSION_MODE", "0") };
         assert!(
-            !effective_auto_for_launch(false, Some("auto"), None),
+            !effective_auto_for_launch(false, Some("auto"), None, PermissionMode::Ask),
             "gate OFF: explicit --permission-mode auto must not activate auto"
         );
         assert!(
-            !effective_auto_for_launch(false, None, None),
+            !effective_auto_for_launch(false, None, None, PermissionMode::Ask),
             "gate OFF: config-driven auto must not activate auto"
         );
+        assert!(
+            !effective_auto_for_launch(false, None, None, PermissionMode::Auto),
+            "gate OFF: an Auto unset-default must be inert"
+        );
+        unsafe { std::env::remove_var("GROK_AUTO_PERMISSION_MODE") };
+    }
+
+    #[test]
+    fn interactive_default_slot() {
+        let _g = crate::util::config::resolve::AUTO_PERMISSION_MODE_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        unsafe { std::env::remove_var(ENV_DEFAULT_PERMISSION_MODE) };
+        assert_eq!(
+            default_interactive_permission_mode(),
+            DEFAULT_INTERACTIVE_PERMISSION_MODE,
+        );
+        for (raw, expected) in [
+            ("auto", PermissionMode::Auto),
+            ("ask", PermissionMode::Ask),
+            ("default", PermissionMode::Ask),
+            ("always-approve", DEFAULT_INTERACTIVE_PERMISSION_MODE),
+            ("garbage", DEFAULT_INTERACTIVE_PERMISSION_MODE),
+        ] {
+            unsafe { std::env::set_var(ENV_DEFAULT_PERMISSION_MODE, raw) };
+            assert_eq!(
+                default_interactive_permission_mode(),
+                expected,
+                "GROK_DEFAULT_PERMISSION_MODE={raw}"
+            );
+        }
+
+        assert_eq!(selected_permission_mode(None, None), None);
+        let no_perm_keys: TomlValue = toml::from_str("[ui]\ntheme = \"dark\"\n").unwrap();
+        assert_eq!(selected_permission_mode(no_perm_keys.get("ui"), None), None);
+        assert_eq!(
+            selected_permission_mode(None, Some("garbage")),
+            Some(PermissionMode::Ask),
+        );
+
+        unsafe { std::env::set_var("GROK_AUTO_PERMISSION_MODE", "1") };
+        unsafe { std::env::set_var(ENV_DEFAULT_PERMISSION_MODE, "auto") };
+        let unset = default_interactive_permission_mode();
+        assert!(!effective_auto_for_launch(false, Some("ask"), None, unset));
+        assert!(!effective_auto_for_launch(true, None, None, unset));
+        unsafe { std::env::remove_var(ENV_DEFAULT_PERMISSION_MODE) };
         unsafe { std::env::remove_var("GROK_AUTO_PERMISSION_MODE") };
     }
 
