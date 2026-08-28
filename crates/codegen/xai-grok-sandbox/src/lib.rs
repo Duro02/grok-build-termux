@@ -458,13 +458,6 @@ fn is_devbox_based(profile: &ProfileName, config: &SandboxConfig) -> bool {
 /// cannot drift and silently fail open.
 ///
 /// Decided directly from the profile config (a `Custom` profile with a non-empty
-<<<<<<< HEAD
-/// `deny`) — NOT from the resolved/expanded deny set, which returns empty on
-/// failure. Keying "requires" on that empty-on-error result would silently
-/// downgrade to fail-open (Linux) when resolution hiccups; this intrinsic check
-/// stays fail-closed.
-#[cfg(all(feature = "enforce", any(target_os = "linux", target_os = "macos")))]
-=======
 /// `deny`, or one whose effective `restrict_network` is true — explicit or
 /// inherited from its `extends` base — since `resolve_profile` auto-appends
 /// container-runtime socket denials under restrict_network) — NOT from the
@@ -472,8 +465,7 @@ fn is_devbox_based(profile: &ProfileName, config: &SandboxConfig) -> bool {
 /// "requires" on that empty-on-error result would silently downgrade to
 /// fail-open (Linux) when resolution hiccups; this intrinsic check stays
 /// fail-closed.
-#[cfg(all(feature = "enforce", unix))]
->>>>>>> upstream/main
+#[cfg(all(feature = "enforce", any(target_os = "linux", target_os = "macos")))]
 pub fn requires_read_deny(profile: &ProfileName, workspace: &Path) -> bool {
     match profile {
         ProfileName::Custom(name) => {
