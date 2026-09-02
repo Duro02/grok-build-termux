@@ -28,8 +28,9 @@ use xai_tool_types::{SubagentCapabilityMode, SubagentIsolationMode, WaitMode};
 use crate::register_resource;
 
 pub use super::active_message::{
-    ActiveAgentMessage, ActiveAgentMessageDelivery, ActiveAgentMessageOutcome,
-    ActiveAgentMessageRequest, MAX_ACTIVE_AGENT_MESSAGE_BYTES, SubagentActiveMessageRequest,
+    ActiveAgentMessage, ActiveAgentMessageDelivery, ActiveAgentMessageOperation,
+    ActiveAgentMessageOutcome, ActiveAgentMessageRequest, MAX_ACTIVE_AGENT_MESSAGE_BYTES,
+    SubagentActiveMessageRequest,
 };
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -124,6 +125,13 @@ pub struct SubagentSpawnRequest {
     pub request: Box<SubagentRequest>,
     #[educe(Debug(ignore))]
     pub result_tx: oneshot::Sender<SubagentResult>,
+    /// Fired once when the child is recorded pending or queued.
+    ///
+    /// Independent of [`Self::result_tx`], which stays the terminal
+    /// completion or a definite pre-start reject. Only Task background
+    /// mode attaches this; scheduler-loop fires leave it `None`.
+    #[educe(Debug(ignore))]
+    pub registered_tx: Option<oneshot::Sender<()>>,
 }
 
 impl std::ops::Deref for SubagentSpawnRequest {
@@ -145,6 +153,13 @@ impl SubagentSpawnRequest {
     ) -> Result<(), SubagentResult> {
         let result = build(&self.request);
         self.result_tx.send(result)
+    }
+
+    /// Signal that the child was recorded pending or queued.
+    pub fn notify_registered(&mut self) {
+        if let Some(tx) = self.registered_tx.take() {
+            let _ = tx.send(());
+        }
     }
 }
 
@@ -414,10 +429,11 @@ pub struct SubagentResult {
     pub output_usage_incomplete: bool,
     /// Path to the isolated worktree if one was created.
     pub worktree_path: Option<String>,
-    /// Set when a blocking subagent exceeded its await budget and was
-    /// auto-backgrounded: the child is still running (result via auto-wake /
-    /// `get_command_or_subagent_output`), so the tool returns a `task_id` notice
-    /// instead of a completion. Never set for natively backgrounded subagents.
+    /// Set when a blocking caller was handed a still-running child after the
+    /// foreground await budget (queued or in-flight auto-background). Not a
+    /// completion — `success` stays false so `status()` is not `"completed"`;
+    /// branch on this before `success`. Task `run_in_background` start is a
+    /// separate registration signal, not this flag on `spawn()`.
     pub backgrounded: bool,
 }
 
@@ -605,6 +621,8 @@ pub struct SubagentCompletionSummary {
     pub subagent_id: String,
     pub subagent_type: String,
     pub description: String,
+    /// Scheduled task that launched this child, when applicable.
+    pub loop_task_id: Option<String>,
     pub success: bool,
     pub duration_ms: u64,
     pub tool_calls: u32,
@@ -655,6 +673,15 @@ pub struct SubagentOutstandingReply {
 #[derive(Educe)]
 #[educe(Debug)]
 pub struct SubagentOutstandingRequest {
+    pub parent_session_id: String,
+    pub prompt_id: String,
+    #[educe(Debug(ignore))]
+    pub respond_to: oneshot::Sender<SubagentOutstandingReply>,
+}
+
+#[derive(Educe)]
+#[educe(Debug)]
+pub struct SubagentWaitPromptDrainedRequest {
     pub parent_session_id: String,
     pub prompt_id: String,
     #[educe(Debug(ignore))]
@@ -776,8 +803,13 @@ pub enum SubagentValidateTypeOutcome {
     NotAllowed {
         allowed: Vec<String>,
     },
-    /// Coordinator unreachable; distinct from `Unknown` (the type may be valid).
+    /// Coordinator produced no verdict (busy past the timeout, dropped the
+    /// responder, or an internal resolution fault); distinct from `Unknown`
+    /// (the type may be valid) — a retry can succeed.
     ValidationUnavailable,
+    /// The coordinator channel is closed — it has shut down, so retries fail
+    /// instantly.
+    CoordinatorGone,
 }
 
 #[derive(Educe)]
@@ -885,6 +917,7 @@ pub enum SubagentEvent {
         parent_session_id: String,
     },
     Outstanding(SubagentOutstandingRequest),
+    WaitPromptDrained(SubagentWaitPromptDrainedRequest),
     ClearUsageNotApplied(SubagentClearUsageNotAppliedRequest),
     MarkUsageNotApplied(SubagentMarkUsageNotAppliedRequest),
     RegistryCounts(SubagentRegistryCountsRequest),
@@ -1469,6 +1502,7 @@ mod tests {
             subagent_id: "sub-1".into(),
             subagent_type: "general-purpose".into(),
             description: "test task".into(),
+            loop_task_id: None,
             success: true,
             duration_ms: 1500,
             tool_calls: 7,

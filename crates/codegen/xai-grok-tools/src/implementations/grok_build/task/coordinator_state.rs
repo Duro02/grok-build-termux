@@ -44,6 +44,12 @@ pub const MAX_ACTIVE_MESSAGE_ADMISSIONS: usize = 64;
 /// Maximum wait for a host to confirm or reject admission.
 pub const ACTIVE_MESSAGE_ADMISSION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// Maximum wait for an owned spawning child to become active before a parked
+/// agent send is released. Session bootstrap routinely exceeds the admission
+/// timeout, so this backstop is separate and much longer.
+pub const ACTIVE_MESSAGE_SPAWN_READY_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(120);
+
 /// Maximum wait for the coordinator to drain selected admissions.
 pub const ACTIVE_MESSAGE_FINALIZATION_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(6);
@@ -346,6 +352,9 @@ pub(super) struct PendingChild {
     pub(super) foreground_deadline: Option<tokio::time::Instant>,
     pub(super) handle_only: bool,
     pub(super) explicitly_killed: bool,
+    /// False when the record was synthesized for a spawn that never reached
+    /// the runner (admission reject, cancelled while queued).
+    pub(super) launched: bool,
 }
 
 pub(super) struct ActiveChild<C> {
@@ -856,6 +865,7 @@ pub fn completion_summary(
         subagent_id: request.id.clone(),
         subagent_type: request.subagent_type.clone(),
         description: request.description.clone(),
+        loop_task_id: request.runtime_overrides.loop_task_id.clone(),
         success: result.success && !result.cancelled,
         duration_ms: result.duration_ms,
         tool_calls: result.tool_calls,

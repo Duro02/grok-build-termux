@@ -9,17 +9,33 @@ use xai_tool_types::is_not_sentinel;
 /// Maximum UTF-8 byte length of one in-memory V0 agent message.
 pub const MAX_ACTIVE_AGENT_MESSAGE_BYTES: usize = 32 * 1024;
 
+/// Closed delivery operation. No bool below the model adapter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActiveAgentMessageOperation {
+    Queue,
+    Steer,
+}
+
 /// Bounded caller request for the internal active-descendant route.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActiveAgentMessageRequest {
     subagent_id: String,
     text: Arc<str>,
+    operation: ActiveAgentMessageOperation,
 }
 
 impl ActiveAgentMessageRequest {
     pub fn try_new(
         subagent_id: impl Into<String>,
         text: impl Into<Arc<str>>,
+    ) -> Result<Self, ActiveAgentMessageOutcome> {
+        Self::try_new_with_operation(subagent_id, text, ActiveAgentMessageOperation::Queue)
+    }
+
+    pub fn try_new_with_operation(
+        subagent_id: impl Into<String>,
+        text: impl Into<Arc<str>>,
+        operation: ActiveAgentMessageOperation,
     ) -> Result<Self, ActiveAgentMessageOutcome> {
         let subagent_id = subagent_id.into();
         if !is_not_sentinel(&subagent_id) {
@@ -41,7 +57,21 @@ impl ActiveAgentMessageRequest {
         Ok(Self {
             subagent_id: subagent_id.trim().to_owned(),
             text,
+            operation,
         })
+    }
+
+    /// Moves the request out, leaving a dropped placeholder. Not a valid send.
+    pub(crate) fn take(&mut self) -> Self {
+        std::mem::replace(self, Self::placeholder())
+    }
+
+    fn placeholder() -> Self {
+        Self {
+            subagent_id: String::new(),
+            text: Arc::from(""),
+            operation: ActiveAgentMessageOperation::Queue,
+        }
     }
 
     pub fn subagent_id(&self) -> &str {
@@ -50,6 +80,10 @@ impl ActiveAgentMessageRequest {
 
     pub fn text(&self) -> &Arc<str> {
         &self.text
+    }
+
+    pub fn operation(&self) -> ActiveAgentMessageOperation {
+        self.operation
     }
 }
 
@@ -65,22 +99,29 @@ pub struct ActiveAgentMessage {
 #[derive(Debug, Clone)]
 pub struct ActiveAgentMessageDelivery {
     message: ActiveAgentMessage,
+    operation: ActiveAgentMessageOperation,
     admission_lease: Arc<ActiveMessageAdmissionLease>,
 }
 
 impl ActiveAgentMessageDelivery {
     pub(crate) fn new(
         message: ActiveAgentMessage,
+        operation: ActiveAgentMessageOperation,
         admission_lease: Arc<ActiveMessageAdmissionLease>,
     ) -> Self {
         Self {
             message,
+            operation,
             admission_lease,
         }
     }
 
     pub fn message(&self) -> &ActiveAgentMessage {
         &self.message
+    }
+
+    pub fn operation(&self) -> ActiveAgentMessageOperation {
+        self.operation
     }
 
     /// Run synchronous protected-row insertion only while admission is open.
