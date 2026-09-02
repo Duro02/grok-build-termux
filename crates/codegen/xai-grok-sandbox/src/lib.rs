@@ -10,18 +10,12 @@
 //! Applied once at process startup. Covers in-process `tokio::fs` calls and child processes.
 //! Network is left open at the process level (agent needs LLM API); child network is blocked per-subprocess via seccomp.
 //!
-<<<<<<< HEAD
 //! The `enforce` feature (on by default) pulls in `nono` for
 //! kernel-enforced sandboxing (Landlock/Seatbelt) on Linux/macOS. When disabled
 //! or built on Android/another unsupported target, the
 //! crate still provides lightweight helpers (`log_violation`,
 //! `should_restrict_child_network`, `child_net`) that compile on all
 //! targets including musl.
-=======
-//! The `enforce` feature (on by default) pulls in `nono` for kernel-enforced sandboxing (Landlock/Seatbelt).
-//! When disabled, the crate still provides lightweight helpers (`log_violation`, `should_restrict_child_network`, `child_net`).
-//! Those helpers compile on all targets including musl.
->>>>>>> upstream/main
 //!
 //! ```rust,no_run
 //! use xai_grok_sandbox::{SandboxManager, ProfileName};
@@ -248,13 +242,8 @@ impl SandboxManager {
             }
         }
     }
-<<<<<<< HEAD
     /// Stub when `enforce` feature is disabled — sandbox is not applied.
     #[cfg(not(all(feature = "enforce", any(target_os = "linux", target_os = "macos"))))]
-=======
-    /// Stub when `enforce` feature is disabled; sandbox is not applied.
-    #[cfg(not(all(feature = "enforce", unix)))]
->>>>>>> upstream/main
     pub fn apply(&mut self, _workspace: &Path) -> anyhow::Result<()> {
         tracing::info!(
             profile = %self.profile,
@@ -274,12 +263,8 @@ impl SandboxManager {
             ),
         });
     }
-<<<<<<< HEAD
     /// Check whether the current platform supports sandboxing.
     #[cfg(all(feature = "enforce", any(target_os = "linux", target_os = "macos")))]
-=======
-    #[cfg(all(feature = "enforce", unix))]
->>>>>>> upstream/main
     pub fn support_info() -> nono::SupportInfo {
         Sandbox::support_info()
     }
@@ -460,7 +445,6 @@ fn is_devbox_based(profile: &ProfileName, config: &SandboxConfig) -> bool {
 /// Whether kernel read-deny enforcement is required.
 /// This is the single source of truth, so callers (e.g. the shell's fail-closed startup path) cannot drift and silently fail open.
 ///
-<<<<<<< HEAD
 /// Decided directly from the profile config (a `Custom` profile with a non-empty
 /// `deny`, or one whose effective `restrict_network` is true — explicit or
 /// inherited from its `extends` base — since `resolve_profile` auto-appends
@@ -470,12 +454,6 @@ fn is_devbox_based(profile: &ProfileName, config: &SandboxConfig) -> bool {
 /// fail-open (Linux) when resolution hiccups; this intrinsic check stays
 /// fail-closed.
 #[cfg(all(feature = "enforce", any(target_os = "linux", target_os = "macos")))]
-=======
-/// Decided directly from the profile config, NOT from the resolved/expanded deny set, which returns empty on failure.
-/// Keying "requires" on that empty-on-error result would silently downgrade to fail-open (Linux) when resolution hiccups.
-/// This intrinsic check stays fail-closed.
-#[cfg(all(feature = "enforce", unix))]
->>>>>>> upstream/main
 pub fn requires_read_deny(profile: &ProfileName, workspace: &Path) -> bool {
     match profile {
         ProfileName::Custom(name) => {
@@ -497,13 +475,8 @@ pub fn requires_read_deny(profile: &ProfileName, workspace: &Path) -> bool {
         _ => false,
     }
 }
-<<<<<<< HEAD
 /// Stub when `enforce` is unavailable — nothing is kernel-enforced.
 #[cfg(not(all(feature = "enforce", any(target_os = "linux", target_os = "macos"))))]
-=======
-/// Stub when `enforce` is unavailable; nothing is kernel-enforced.
-#[cfg(not(all(feature = "enforce", unix)))]
->>>>>>> upstream/main
 pub fn requires_read_deny(_profile: &ProfileName, _workspace: &Path) -> bool {
     false
 }
@@ -970,16 +943,10 @@ mod tests {
         .unwrap();
         ws
     }
-<<<<<<< HEAD
     /// Create a temp workspace defining a `denytest` profile (extends `workspace`)
     /// with the given `deny` list. `deny_toml` is the raw TOML array body
     /// (e.g. `"\".env\""`).
     #[cfg(all(feature = "enforce", any(target_os = "linux", target_os = "macos")))]
-=======
-    /// Create a temp workspace defining a `denytest` profile (extends `workspace`) with the given `deny` list.
-    /// `deny_toml` is the raw TOML array body (e.g. `"\".env\""`).
-    #[cfg(all(feature = "enforce", unix))]
->>>>>>> upstream/main
     fn temp_workspace_with_deny(tag: &str, deny_toml: &str) -> PathBuf {
         temp_workspace_with_sandbox_toml(
             tag,

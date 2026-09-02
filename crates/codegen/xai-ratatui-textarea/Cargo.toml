@@ -15,11 +15,6 @@ unicode-segmentation = { workspace = true }
 unicode-width = { workspace = true }
 
 [dev-dependencies]
-<<<<<<< HEAD
-chrono = { workspace = true }
-=======
-arboard = { workspace = true }
->>>>>>> upstream/main
 fuzzy-matcher = { workspace = true }
 ignore = { workspace = true }
 itertools = { workspace = true }

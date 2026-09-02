@@ -16,24 +16,8 @@
 //! Every other pasteboard shape (file URLs, text-to-furl coercions, AppKit unavailable, read failure) falls back to the subprocess path.
 //! `GROK_CLIPBOARD_NO_NATIVE_READ=1` disables the in-process read entirely (kill switch if a future macOS gates `dataForType:` behind a prompt).
 //!
-<<<<<<< HEAD
-//! Paste-time image reads ([`get_image`] / [`get_attachments`]) use the same
-//! lazily loaded AppKit to read raster bytes in-process (`dataForType:`) on
-//! the unambiguous hot path (raster advertised, no file-URL type alongside),
-//! skipping the ~0.5–0.9 s `osascript` + temp-file round trip.
-//! Content is only ever read at an explicit user paste — the same user-intent
-//! boundary where the `osascript`/`pbpaste` subprocesses read the pasteboard —
-//! and every other pasteboard shape (file URLs, text→furl coercions, AppKit
-//! unavailable, read failure) falls back to the unchanged subprocess path.
-//! `GROK_CLIPBOARD_NO_NATIVE_READ=1` disables the in-process read entirely
-//! (kill switch if a future macOS gates `dataForType:` behind a prompt).
-//!
-//! On Linux and Windows, `arboard` is used directly (it does not link AppKit on
-//! those platforms). On Android/Termux, the `termux-clipboard-get` and
-//! `termux-clipboard-set` commands are used when Termux:API is installed.
-=======
 //! On Linux and Windows, `arboard` is used directly (it does not link AppKit on those platforms).
->>>>>>> upstream/main
+//! On Android/Termux, `termux-clipboard-get` and `termux-clipboard-set` are used when Termux:API is installed.
 //!
 //! ## OSC 52 (remote clipboard)
 //!

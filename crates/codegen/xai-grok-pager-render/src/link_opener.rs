@@ -64,15 +64,10 @@ pub fn browser_unavailable_line(url: &str, copied: bool) -> String {
 
 /// Open a URL in the system's default browser/handler.
 ///
-<<<<<<< HEAD
 /// Uses the platform-native opener: `open` on macOS, `xdg-open` on Linux,
-/// and `termux-open-url` on Android (spawned with fully detached stdio so
-/// it cannot block the pager), and `ShellExecuteW` on Windows — never
-/// `cmd /c start`, whose `&` metacharacter splitting and `%VAR%` expansion
-/// would let a crafted URL run arbitrary commands.
-=======
-/// Uses the native opener: `open` on macOS, `xdg-open` on Linux (with detached stdio so it cannot block the pager), and `ShellExecuteW` on Windows.
->>>>>>> upstream/main
+/// `termux-open-url` on Android (with detached stdio so it cannot block the
+/// pager), and `ShellExecuteW` on Windows. It never uses `cmd /c start`, whose
+/// metacharacter splitting and environment expansion could execute a crafted URL.
 ///
 /// Returns `true` when the opener was launched (or `GROK_TEST_OPEN_URL_FILE` recorded the URL).
 /// Returns `false` when the environment looks headless or the spawn fails.
@@ -97,19 +92,9 @@ pub fn open_url(url: &str) -> bool {
         return true;
     }
 
-<<<<<<< HEAD
-    // Termux has no desktop DISPLAY, but termux-open-url delegates to the
-    // Android browser through the Termux activity bridge. Skip this desktop
-    // availability check there and let spawn_url_opener use the bridge.
-
-    // Skip the doomed spawn on headless Linux VMs (no DISPLAY / Wayland)
-    // so billing Upgrade / Buy-credits clicks can fall back to showing the
-    // URL instead of silently no-op'ing.
+    // Termux has no desktop display, but termux-open-url delegates through the
+    // Android activity bridge. Only desktop targets use the display availability guard.
     #[cfg(not(target_os = "android"))]
-=======
-    // Skip the doomed spawn on headless Linux VMs (no DISPLAY or Wayland)
-    // Billing Upgrade and Buy-credits clicks then fall back to showing the URL instead of silently doing nothing
->>>>>>> upstream/main
     if !browser_open_likely_available() {
         tracing::info!("skipping browser open: no display server / BROWSER");
         return false;
@@ -187,11 +172,9 @@ fn spawn_url_opener(url: &str) -> bool {
     }
 }
 
-<<<<<<< HEAD
-/// Build the platform-native opener command for a local path.
-=======
-/// Build the `open`/`xdg-open` opener command (macOS, Linux, BSD); Windows uses [`reveal_in_explorer`] instead.
->>>>>>> upstream/main
+/// Build the platform-native local-path opener command: `open` on macOS,
+/// `termux-open` on Android, and `xdg-open` on Linux/BSD; Windows uses
+/// [`reveal_in_explorer`] instead.
 ///
 /// [`xai_tty_utils::detach_std_command`] (`setsid`/`setpgid`) keeps the spawned GUI helper and its children from grabbing the TUI's `/dev/tty`.
 /// Split from [`open_path`] so it can be unit-tested without spawning.

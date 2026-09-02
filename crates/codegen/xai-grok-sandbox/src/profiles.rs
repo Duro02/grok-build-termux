@@ -185,18 +185,11 @@ fn load_config_file(path: &Path) -> Option<SandboxConfig> {
 /// `/dev/tty` always exists, but without a controlling terminal `open()` returns ENXIO and nono's apply aborts the **entire** ruleset.
 /// Built-in profiles fail open, which was a silent sandbox bypass under `setsid`/CI/headless launches.
 ///
-<<<<<<< HEAD
 /// Only that class of failure (and missing nodes) is filtered here. Other open
 /// errors — notably **EISDIR** on directory nodes — must not drop the path:
 /// directories are granted via [`DEVICE_DIRS`] / `allow_path`, and a plain
 /// `File::open` EISDIR does not mean Landlock would reject the grant.
 #[cfg(all(feature = "enforce", any(target_os = "linux", target_os = "macos")))]
-=======
-/// Only that class of failure (and missing nodes) is filtered here.
-/// Other open errors (notably **EISDIR** on directory nodes) must not drop the path: directories are granted via [`DEVICE_DIRS`] / `allow_path`.
-/// A plain `File::open` EISDIR does not mean Landlock would reject the grant.
-#[cfg(all(feature = "enforce", unix))]
->>>>>>> upstream/main
 fn device_file_openable(path: &Path) -> bool {
     match std::fs::File::open(path) {
         Ok(_) => true,
@@ -219,14 +212,9 @@ impl ProfileName {
 
     /// Convert using an already-loaded config (avoids re-reading disk).
     ///
-<<<<<<< HEAD
     /// A custom profile's own `deny` list is kernel-enforced (read + write/rename)
     /// on top of the base profile.
     #[cfg(all(feature = "enforce", any(target_os = "linux", target_os = "macos")))]
-=======
-    /// A custom profile's own `deny` list is kernel-enforced (read and write/rename) on top of the base profile.
-    #[cfg(all(feature = "enforce", unix))]
->>>>>>> upstream/main
     pub fn to_capability_set_with_config(
         &self,
         workspace: &Path,
@@ -240,10 +228,7 @@ impl ProfileName {
         Self::capability_set_from_profile(workspace, &profile)
     }
 
-<<<<<<< HEAD
     #[cfg(all(feature = "enforce", any(target_os = "linux", target_os = "macos")))]
-=======
-    #[cfg(all(feature = "enforce", unix))]
     fn read_write_grant_path(path: &Path, home: &Path) -> Option<PathBuf> {
         match std::fs::symlink_metadata(path) {
             Ok(meta) if meta.file_type().is_symlink() => {
@@ -277,8 +262,7 @@ impl ProfileName {
         }
     }
 
-    #[cfg(all(feature = "enforce", unix))]
->>>>>>> upstream/main
+    #[cfg(all(feature = "enforce", any(target_os = "linux", target_os = "macos")))]
     pub(crate) fn capability_set_from_profile(
         workspace: &Path,
         profile: &SandboxProfile,
@@ -705,9 +689,6 @@ mod tests {
     }
 
     #[test]
-<<<<<<< HEAD
-    #[cfg(all(feature = "enforce", any(target_os = "linux", target_os = "macos")))]
-=======
     fn strict_reads_grok_home_but_only_sessions_writable() {
         if skip_if_host_hook_write_deny_unresolvable() {
             return;
@@ -790,8 +771,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(all(feature = "enforce", unix))]
->>>>>>> upstream/main
+    #[cfg(all(feature = "enforce", any(target_os = "linux", target_os = "macos")))]
     fn base_profile_capability_set_builds() {
         if skip_if_host_hook_write_deny_unresolvable() {
             return;

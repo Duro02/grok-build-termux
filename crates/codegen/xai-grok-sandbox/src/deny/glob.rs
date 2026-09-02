@@ -19,16 +19,10 @@ use super::is_glob;
 #[cfg(all(feature = "enforce", target_os = "macos"))]
 use super::{emit_seatbelt_deny, macos_deny_aliases};
 
-<<<<<<< HEAD
 /// Split a profile's raw deny entries into exact paths (handled by the literal /
 /// subpath kernel-deny flow) and glob patterns. Non-glob entries are returned
 /// unchanged so their exact-path enforcement is preserved with no regression.
 #[cfg(all(feature = "enforce", any(target_os = "linux", target_os = "macos")))]
-=======
-/// Split a profile's raw deny entries into exact paths (handled by the literal / subpath kernel-deny flow) and glob patterns.
-/// Non-glob entries are returned unchanged so their exact-path enforcement is preserved.
-#[cfg(all(feature = "enforce", unix))]
->>>>>>> upstream/main
 pub(crate) fn partition_deny_entries(deny: &[PathBuf]) -> (Vec<PathBuf>, Vec<String>) {
     let mut exact = Vec::new();
     let mut globs = Vec::new();
@@ -41,19 +35,12 @@ pub(crate) fn partition_deny_entries(deny: &[PathBuf]) -> (Vec<PathBuf>, Vec<Str
     (exact, globs)
 }
 
-<<<<<<< HEAD
 /// Split a glob into its literal root and the tail from the first glob
 /// component (`secrets/**` -> `<workspace>/secrets` + `**`; `/home/**/.ssh` ->
 /// `/home` + `**/.ssh`). Root plus tail always re-joins to the original
 /// pattern, so the macOS regex body is unchanged; the alias set follows the
 /// (possibly deeper) root.
 #[cfg(all(feature = "enforce", any(target_os = "linux", target_os = "macos")))]
-=======
-/// Split a glob into its literal root and the tail from the first glob component.
-/// For example `secrets/**` splits to `<workspace>/secrets` plus `**`, and `/home/**/.ssh` to `/home` plus `**/.ssh`.
-/// Root plus tail always re-joins to the original pattern, so the macOS regex body is unchanged; the alias set follows the (possibly deeper) root.
-#[cfg(all(feature = "enforce", unix))]
->>>>>>> upstream/main
 fn split_glob_root(workspace: &Path, glob: &str) -> (PathBuf, String) {
     let (mut root, rest) = match glob.strip_prefix('/') {
         Some(absolute) => (PathBuf::from("/"), absolute),
@@ -75,7 +62,6 @@ fn split_glob_root(workspace: &Path, glob: &str) -> (PathBuf, String) {
 /// This keeps macOS from silently under-enforcing a pattern.
 /// Two checks, run before the macOS regex translation and the Linux globset expansion alike:
 ///
-<<<<<<< HEAD
 /// 1. Reject `{`/`}`/`\`: globset honors brace alternation and backslash-escapes,
 ///    but Seatbelt's runtime regex (sourced from globset's own `.regex()` mis-
 ///    enforces `**/` for root-level paths, so we hand-roll the regex instead and
@@ -85,14 +71,6 @@ fn split_glob_root(workspace: &Path, glob: &str) -> (PathBuf, String) {
 /// 2. Compile through `globset` (the Linux matcher) so a malformed glob (`a**b`,
 ///    unterminated `[`) fails closed identically on both platforms.
 #[cfg(all(feature = "enforce", any(target_os = "linux", target_os = "macos")))]
-=======
-/// 1. Reject `{`/`}`/`\`: globset honors brace alternation and backslash-escapes, but the Seatbelt regex cannot faithfully reproduce them.
-///    (globset's own `.regex()` mis-enforces `**/` for root-level paths, so we hand-roll the regex instead.)
-///    Rejecting those forms on both platforms keeps the two backends in agreement.
-///    A user wanting alternation writes separate deny entries.
-/// 2. Compile through `globset` (the Linux matcher) so a malformed glob (`a**b`, unterminated `[`) fails closed identically on both platforms.
-#[cfg(all(feature = "enforce", unix))]
->>>>>>> upstream/main
 pub(crate) fn validate_deny_glob(glob: &str) -> anyhow::Result<()> {
     if let Some(c) = glob.chars().find(|&c| matches!(c, '{' | '}' | '\\')) {
         anyhow::bail!(
@@ -300,18 +278,11 @@ fn seatbelt_regex_filter(regex: &str) -> Option<String> {
 /// On Linux this is a no-op: a mount namespace can't match a regex at runtime.
 /// Globs are instead expanded to concrete paths and bound over at bwrap re-exec (see [`expand_deny_globs`]).
 ///
-<<<<<<< HEAD
 /// Unlike the exact-path flow, this does NOT call `remove_exact_file_caps_for_paths`
 /// (a glob can't enumerate the file caps it collides with); glob denies rely on
 /// Seatbelt last-match ordering — the deny platform rules are emitted after the
 /// read/write allows, so the regex deny wins. The e2e is the contract.
 #[cfg(all(feature = "enforce", any(target_os = "linux", target_os = "macos")))]
-=======
-/// Unlike the exact-path flow, this does NOT call `remove_exact_file_caps_for_paths` (a glob can't enumerate the file caps it collides with).
-/// Glob denies rely on Seatbelt last-match ordering: the deny platform rules are emitted after the read/write allows, so the regex deny wins.
-/// The e2e is the contract.
-#[cfg(all(feature = "enforce", unix))]
->>>>>>> upstream/main
 pub(crate) fn apply_deny_globs_to_capability_set(
     caps: &mut CapabilitySet,
     workspace: &Path,
@@ -557,14 +528,9 @@ pub(crate) fn expand_deny_globs(
 
 #[cfg(test)]
 mod tests {
-<<<<<<< HEAD
     // All tests here exercise enforce+unix paths; without the gate `super::*`
     // is unused on `--no-default-features`.
     #[cfg(all(feature = "enforce", any(target_os = "linux", target_os = "macos")))]
-=======
-    // All tests here exercise enforce+unix paths; without the gate `super::*` is unused on `--no-default-features`
-    #[cfg(all(feature = "enforce", unix))]
->>>>>>> upstream/main
     use super::*;
 
     #[test]

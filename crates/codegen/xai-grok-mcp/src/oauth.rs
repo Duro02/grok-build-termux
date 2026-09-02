@@ -16,7 +16,6 @@ const CREDENTIAL_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_
 
 const BROWSER_AUTH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
 
-<<<<<<< HEAD
 /// Open an OAuth URL through the native desktop opener or Termux's Android
 /// activity bridge.
 fn open_browser_url(url: &str) -> std::io::Result<()> {
@@ -45,8 +44,6 @@ fn open_browser_url(url: &str) -> std::io::Result<()> {
 /// on dedup and proceeding with its own flow. Slightly above
 /// [`BROWSER_AUTH_TIMEOUT`] so a legitimately-slow leader (user reading the
 /// consent screen) finishes first and the follower reuses its token.
-=======
->>>>>>> upstream/main
 #[cfg(unix)]
 const AUTH_LOCK_WAIT: std::time::Duration =
     BROWSER_AUTH_TIMEOUT.saturating_add(std::time::Duration::from_secs(60));
@@ -451,11 +448,7 @@ async fn build_authorization_url(
 
 fn open_consent_browser(server_name: &str, auth_url: &str) {
     tracing::info!(server = server_name, "Opening browser for OAuth consent");
-<<<<<<< HEAD
-    if let Err(e) = open_browser_url(&auth_url) {
-=======
-    if let Err(e) = webbrowser::open(auth_url) {
->>>>>>> upstream/main
+    if let Err(e) = open_browser_url(auth_url) {
         // eprintln! corrupts the TUI alternate screen (in-process, fd 2).
         // TODO: show the auth URL via ACP notification instead
         tracing::warn!(%e, url = %auth_url, "Failed to open browser for MCP OAuth; user must visit URL manually");

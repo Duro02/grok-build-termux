@@ -5,21 +5,18 @@
 //! - **Linux**: a subprocess recorder; the static-musl release binary cannot link `cpal`'s `alsa-sys`. See [`capture_linux`].
 //! - **macOS**: the self-exec `__mic-capture` helper subprocess; in-process CoreAudio memory is never returned. See [`capture_subprocess`].
 //! - **Windows**: `cpal` (WASAPI) in-process; its memory cost is modest.
+//! - **Android**: `cpal` in-process.
 //!
-//! The fixed-duration probe capture stays in-process on macOS/Windows.
+//! The fixed-duration probe capture stays in-process on macOS/Windows/Android.
 //! It only runs in short-lived diagnostic processes, where the memory dies at exit.
 //!
 //! `CaptureHandle` is deliberately one name per platform, resolved by the re-exports below:
 //! - Linux: `pipe::ChildCaptureHandle` (recorder subprocess);
 //! - macOS: `capture_subprocess::CaptureHandle`, an enum over the helper subprocess and the in-process fallback;
-//! - Windows: `capture::CaptureHandle` (in-process cpal stream).
+//! - Windows/Android: `capture::CaptureHandle` (in-process cpal stream).
 
-<<<<<<< HEAD
 // cpal-based capture: the Windows and Android backends, the macOS fallback,
 // and the macOS `__mic-capture` child implementation.
-=======
-// cpal-based capture: the Windows backend, the macOS fallback, and the macOS `__mic-capture` child implementation
->>>>>>> upstream/main
 #[cfg(not(target_os = "linux"))]
 mod capture;
 // Wire protocol shared by the `__mic-capture` child (writer, in `capture`) and the macOS parent (parser, in `capture_subprocess`)

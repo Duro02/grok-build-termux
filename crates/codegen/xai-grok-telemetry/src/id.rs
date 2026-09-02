@@ -73,16 +73,11 @@ fn load_or_compute_agent_id() -> String {
 }
 
 /// - macOS: mid uses unique hardware IDs (serial, UUID, SEID).
-<<<<<<< HEAD
 /// - Linux: /etc/machine-id is shared across containers from the same base
 ///   image, so include $HOSTNAME (container/host name) for uniqueness.
 /// - Android/Termux: use a stable environment-provided identifier when one is
 ///   available; `mid` intentionally has no Android implementation.
 /// - Fallback: random UUIDv4, persisted by the caller.
-=======
-/// - Linux: /etc/machine-id is shared across containers from the same base image, so include $HOSTNAME (container/host name) for uniqueness.
-/// - Fallback: random UUIDv4 if mid or hostname are unavailable.
->>>>>>> upstream/main
 fn compute_machine_hash() -> String {
     #[cfg(target_os = "android")]
     {
