@@ -73,15 +73,9 @@ fn toggle_private_prefix(path: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Specific Seatbelt write sub-actions denied for a denied path.
-///
-/// `(deny file-write* ...)` alone does NOT win: nono emits platform rules between the read-allows and the write-allows.
-/// The broad workspace `(allow file-write* (subpath <ws>))` is thus emitted AFTER our deny and wins by last-match.
-/// That leaves an in-workspace denied path writable, so `mv x y && cat y` could relocate and read it.
-/// Empirically, denying each concrete write sub-action makes the deny win regardless of emission order.
-/// (Each sub-action is more specific than the `file-write*` grant.)
-/// That fully blocks overwrite AND relocation (rename/unlink).
-/// This is observed per-operation rule-list behavior, not a guaranteed action-specificity rule; the macOS e2e is the contract.
+/// `(deny file-write*...)` alone does NOT win: nono emits platform rules between the read-allows and the write-allows.
+/// The broad workspace `(allow file-write* (subpath <ws>))` is thus emitted AFTER our deny and wins by last-match. This
+/// is observed per-operation rule-list behavior, not a guaranteed action-specificity rule; the macOS e2e is the contract.
 #[cfg(all(feature = "enforce", target_os = "macos"))]
 const SEATBELT_WRITE_DENY_ACTIONS: &[&str] = &[
     "file-write-data",
@@ -242,10 +236,9 @@ pub(crate) fn apply_deny_paths_to_capability_set(
             // Emit a deny for each alias form
             for form in macos_deny_aliases(path, &canonical) {
                 let Some(escaped) = escape_seatbelt_path(&form) else {
-                    // Fail CLOSED: a deny path we can't express as a Seatbelt filter would otherwise be silently unprotected
-                    // The sandbox would still report active
-                    // Erroring leaves apply() not applied, so the shell's macOS `!is_applied` guard refuses to start
-                    // That matches Linux, where any failed bind fails closed
+                    // Fail CLOSED: a deny path we can't express as a Seatbelt filter would otherwise be silently unprotected. The sandbox
+                    // would still report active. Erroring leaves apply() not applied, so the shell's macOS `!is_applied` guard refuses to
+                    // start. That matches Linux, where any failed bind fails closed
                     anyhow::bail!("cannot escape deny path {form:?} for Seatbelt");
                 };
                 // `literal` for files, `subpath` for dirs, so deny rules are more specific than parent-directory allows
@@ -303,10 +296,9 @@ pub(crate) fn effective_deny_paths(workspace: &Path, deny: &[PathBuf]) -> Vec<Pa
     paths
 }
 
-/// Resolve already-partitioned EXACT (non-glob) deny entries into bwrap bind strings: resolved against `workspace`, sorted, deduped, stringified.
-/// The caller passes the exact slice from `partition_deny_entries`.
-/// This is a Linux bwrap concern (macOS denies via Seatbelt, not path strings).
-/// It is the exact-path parallel to glob's `expand_deny_globs`, so both deny resolutions live in `deny/`.
+/// Resolve already-partitioned EXACT (non-glob) deny entries into bwrap bind strings: resolved against `workspace`,
+/// sorted, deduped, stringified. This is a Linux bwrap concern (macOS denies via Seatbelt, not path strings). It is the
+/// exact-path parallel to glob's `expand_deny_globs`, so both deny resolutions live in `deny/`.
 #[cfg(all(feature = "enforce", target_os = "linux"))]
 pub(crate) fn exact_deny_path_strings(workspace: &Path, exact: &[PathBuf]) -> Vec<String> {
     effective_deny_paths(workspace, exact)

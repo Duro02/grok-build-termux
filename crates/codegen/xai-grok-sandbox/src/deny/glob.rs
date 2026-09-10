@@ -79,10 +79,9 @@ pub(crate) fn validate_deny_glob(glob: &str) -> anyhow::Result<()> {
              use separate deny entries)"
         );
     }
-    // `**` must be a whole path component (gitignore semantics)
-    // A non-component `**` (e.g. `a**b`) would translate to `.*` on macOS but collapse to `*` in globset.
-    // Reject it on both platforms so they never diverge
-    // Empty segments (`a//*`) drift the same way: globset keeps `//` literally while the macOS regex collapses it
+    // `**` must be a whole path component (gitignore semantics). A non-component `**` (e.g. `a**b`) would translate to `.*` on
+    // macOS but collapse to `*` in globset. Reject it on both platforms so they never diverge. Empty segments (`a//*`) drift
+    // the same way: globset keeps `//` literally while the macOS regex collapses it
     for (index, segment) in glob.split('/').enumerate() {
         if segment.is_empty() && !(index == 0 && glob.starts_with('/')) {
             anyhow::bail!(
@@ -105,10 +104,9 @@ pub(crate) fn validate_deny_glob(glob: &str) -> anyhow::Result<()> {
             );
         }
     }
-    // Char classes: support only the simple subset that translates identically to globset
-    // Reject a literal `]`-first member (`[]a]`) and any nested `[` (which covers POSIX `[[:…:]]`)
-    // They are rejected because globset and the hand-rolled regex parse them differently
-    // (A leading `!`/`^` negation IS supported.)
+    // Char classes: support only the simple subset that translates identically to globset. Reject a literal `]`-first member
+    // (`[]a]`) and any nested `[` (which covers POSIX `[[:…:]]`). They are rejected because globset and the hand-rolled
+    // regex parse them differently (A leading `!`/`^` negation IS supported.)
     let cc: Vec<char> = glob.chars().collect();
     let mut i = 0;
     while i < cc.len() {
@@ -163,10 +161,9 @@ fn escape_regex_literal_str(s: &str) -> String {
     out
 }
 
-/// Translate a gitignore-style glob tail into an (unanchored) Seatbelt regex body.
-/// Dialect: `**/`->`(.*/)?`, `**`->`.*`, `*`->`[^/]*`, `?`->`[^/]`.
-/// `[...]` classes are copied, with a leading `!`/`^` becoming regex negation `[^…]`; all other literal text is regex-escaped.
-/// Only the class subset `validate_deny_glob` accepts reaches here, so it always matches globset.
+/// Translate a gitignore-style glob tail into an (unanchored) Seatbelt regex body. `[...]` classes are copied, with a
+/// leading `!`/`^` becoming regex negation `[^…]`; all other literal text is regex-escaped. Only the class subset
+/// `validate_deny_glob` accepts reaches here, so it always matches globset.
 #[cfg(all(feature = "enforce", target_os = "macos"))]
 fn glob_tail_to_regex(tail: &str) -> String {
     let mut out = String::new();
@@ -664,12 +661,9 @@ mod tests {
     #[test]
     #[cfg(all(feature = "enforce", target_os = "macos"))]
     fn macos_regex_matches_globset_property() {
-        // PARITY GUARD (cross-product)
-        // For EVERY pattern `validate_deny_glob` accepts, the hand-rolled macOS regex must match a path IFF globset (the Linux backend) matches it
-        // Patterns are generated from building blocks crossed with sample paths, so any future dialect drift fails mechanically
-        // The blocks: literals, a regex-metachar literal, `*`, `?`, `**`, and char classes
-        // Char classes cover both negations, ranges, class-content edge cases, and a `]` outside a class
-        // Rejected forms are asserted to fail closed
+        // PARITY GUARD (cross-product) For EVERY pattern `validate_deny_glob` accepts, the hand-rolled macOS regex must match a
+        // path IFF globset (the Linux backend) matches it. Patterns are generated from building blocks crossed with sample
+        // paths, so any future dialect drift fails mechanically. Rejected forms are asserted to fail closed
         let segs = [
             "a", "x.y", "*", "?", "**", "[abc]", "[a-z]", "[!a]", "[^a]", "[.]", "[*]", "[a^]",
             "[a-]", "[-a]", "*]",

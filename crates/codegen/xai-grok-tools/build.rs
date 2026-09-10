@@ -46,10 +46,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Download + embed fd as an optional vendored file-search binary, mirroring
-/// the ripgrep bundling
-/// (release-only or `GROK_TOOLS_BUNDLE_FD_PATH` override), plus pinned
-/// per-asset SHA-256 verification of the downloaded tarball.
+/// Download + embed fd as an optional vendored file-search binary, mirroring the ripgrep bundling
+/// (release-only or `GROK_TOOLS_BUNDLE_FD_PATH` override), plus pinned per-asset SHA-256
+/// verification of the downloaded tarball.
 fn bundle_fd() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-env-changed=GROK_TOOLS_BUNDLE_FD_PATH");
     println!("cargo:rustc-check-cfg=cfg(bundle_fd)");
@@ -208,15 +207,9 @@ fn compress_and_pin(
     Ok(())
 }
 
-/// Bundle a prebuilt **static** search-tool binary (`bfs`/`ugrep`) when
-/// `GROK_TOOLS_BUNDLE_<NAME>_PATH` points at one (supplied by the release
-/// pipeline). Emits
-/// `cfg(bundle_<name>)` so the crate's `include_bytes!` + self-extract engages.
-///
-/// No auto-download (unlike ripgrep): bfs/ugrep publish no prebuilt static
-/// release assets, so the release pipeline supplies the path. Unset → not
-/// bundled (the runtime resolver falls back to `~/.grok/vendor` / `$PATH`);
-/// never a hard failure, so an un-wired build still succeeds.
+/// Bundle a prebuilt **static** search-tool binary (`bfs`/`ugrep`) when `GROK_TOOLS_BUNDLE_<NAME>_PATH` points at one (supplied by the release
+/// pipeline). Emits `cfg(bundle_<name>)` so the crate's `include_bytes!` + self-extract engages. No auto-download (unlike ripgrep): bfs/ugrep
+/// publish no prebuilt static release assets, so the release pipeline supplies the path.
 fn bundle_search_tool(
     name: &str,
     name_uc: &str,
