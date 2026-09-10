@@ -53,7 +53,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     fs::create_dir_all(&gen_dir)?;
 
-<<<<<<< HEAD
     // Skip auto-bundling on Windows: ripgrep ships .zip there (not .tar.gz)
     // and we do not yet have a zip-extraction path. Returning here BEFORE
     // emitting `cargo:rustc-cfg=bundle_rg` keeps the include_bytes! macros
@@ -62,12 +61,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // `winget install BurntSushi.ripgrep.MSVC` or `scoop install ripgrep`.
     // An explicit GROK_SHELL_BUNDLE_RG_PATH still bundles on Windows (the
     // override path below copies any binary regardless of target).
-=======
-    // Skip auto-bundling on Windows: ripgrep ships .zip archives there and this script only extracts .tar.gz
-    // Returning before `cargo:rustc-cfg=bundle_rg` keeps the include_bytes! macros compiled out The runtime then falls back to `rg` on PATH (see src/util/ripgrep.rs::rg_path)
-    // Users install via `winget install BurntSushi.ripgrep.MSVC` or `scoop install ripgrep` An explicit GROK_SHELL_BUNDLE_RG_PATH still bundles on Windows; the override branch below copies any binary regardless of target
-    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
->>>>>>> upstream/main
     if target_os == "windows" && path_override.is_none() {
         return Ok(());
     }

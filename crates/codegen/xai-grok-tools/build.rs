@@ -275,19 +275,12 @@ fn bundle_rg() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-<<<<<<< HEAD
     // Skip auto-bundling on Windows: ripgrep ships .zip on Windows (not
     // .tar.gz) and we have no zip-extraction path. Returning here BEFORE
     // emitting `cargo:rustc-cfg=bundle_rg` keeps include_bytes! macros gated
     // on cfg(bundle_rg) compiled-out, so the runtime falls back to `rg` on
     // PATH. Users install ripgrep separately (winget / scoop). An explicit
     // GROK_TOOLS_BUNDLE_RG_PATH still bundles regardless of target.
-=======
-    // Skip auto-bundling on Windows: ripgrep ships .zip on Windows (not .tar.gz) and we have no zip-extraction path. Returning here BEFORE
-    // emitting `cargo:rustc-cfg=bundle_rg` keeps include_bytes! macros gated on cfg(bundle_rg) compiled-out, so the runtime falls back to `rg` on
-    // PATH. Users install ripgrep separately (winget / scoop). An explicit GROK_TOOLS_BUNDLE_RG_PATH still bundles regardless of target.
-    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
->>>>>>> upstream/main
     if target_os == "windows" && path_override.is_none() {
         return Ok(());
     }

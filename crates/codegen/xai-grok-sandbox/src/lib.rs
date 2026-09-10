@@ -438,7 +438,6 @@ fn is_devbox_based(profile: &ProfileName, config: &SandboxConfig) -> bool {
         _ => false,
     }
 }
-<<<<<<< HEAD
 /// Whether kernel read-deny enforcement is required.
 /// This is the single source of truth, so callers (e.g. the shell's fail-closed startup path) cannot drift and silently fail open.
 ///
@@ -451,12 +450,6 @@ fn is_devbox_based(profile: &ProfileName, config: &SandboxConfig) -> bool {
 /// fail-open (Linux) when resolution hiccups; this intrinsic check stays
 /// fail-closed.
 #[cfg(all(feature = "enforce", any(target_os = "linux", target_os = "macos")))]
-=======
-/// Whether kernel read-deny enforcement is required. This is the single source of truth, so callers (e.g. the shell's
-/// fail-closed startup path) cannot drift and silently fail open. Keying "requires" on that empty-on-error result would
-/// silently downgrade to fail-open (Linux) when resolution hiccups. This intrinsic check stays fail-closed.
-#[cfg(all(feature = "enforce", unix))]
->>>>>>> upstream/main
 pub fn requires_read_deny(profile: &ProfileName, workspace: &Path) -> bool {
     match profile {
         ProfileName::Custom(name) => {
@@ -974,7 +967,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&ws);
     }
     #[test]
-    #[cfg(all(feature = "enforce", unix))]
+    #[cfg(all(feature = "enforce", any(target_os = "linux", target_os = "macos")))]
     fn requires_read_deny_for_custom_profile_with_effective_restrict_network() {
         let ws = temp_workspace_with_sandbox_toml(
             "requires-net-true",

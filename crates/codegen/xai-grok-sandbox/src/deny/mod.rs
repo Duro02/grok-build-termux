@@ -209,18 +209,12 @@ pub(crate) fn apply_write_deny_paths_to_capability_set(
     Ok(())
 }
 
-<<<<<<< HEAD
 /// Apply kernel-level deny rules for the given paths.
 ///
 /// On macOS, adds Seatbelt read-deny + write-deny (incl. specific write
 /// sub-actions) rules. On Linux, this is a no-op — callers must use bwrap
 /// bind-over for read-deny.
 #[cfg(all(feature = "enforce", any(target_os = "linux", target_os = "macos")))]
-=======
-/// Apply kernel-level deny rules for the given paths. On macOS, adds Seatbelt read-deny and write-deny (incl. specific
-/// write sub-actions) rules. On Linux, this is a no-op; callers must use bwrap bind-over for read-deny.
-#[cfg(all(feature = "enforce", unix))]
->>>>>>> upstream/main
 pub(crate) fn apply_deny_paths_to_capability_set(
     caps: &mut CapabilitySet,
     deny_paths: &[PathBuf],
@@ -314,7 +308,6 @@ pub(crate) fn exact_deny_path_strings(workspace: &Path, exact: &[PathBuf]) -> Ve
 }
 
 /// Whether a deny path should be treated as a directory (Seatbelt `subpath` / bwrap dir-bind) rather than a single file.
-<<<<<<< HEAD
 /// True for existing directories, false otherwise.
 /// Shared by the macOS and Linux deny sites so the two cannot silently diverge.
 ///
@@ -322,11 +315,6 @@ pub(crate) fn exact_deny_path_strings(workspace: &Path, exact: &[PathBuf]) -> Ve
 /// `(literal …)`); if it is later created as a directory its children are not
 /// covered on macOS. Name concrete existing paths to deny a whole directory tree.
 #[cfg(all(feature = "enforce", any(target_os = "linux", target_os = "macos")))]
-=======
-/// True for existing directories, false otherwise. Shared by the macOS and Linux deny sites so the two cannot silently
-/// diverge. If it is later created as a directory its children are not covered on macOS.
-#[cfg(all(feature = "enforce", unix))]
->>>>>>> upstream/main
 pub(crate) fn deny_path_is_dir(canonical: &Path) -> bool {
     canonical.is_dir()
 }

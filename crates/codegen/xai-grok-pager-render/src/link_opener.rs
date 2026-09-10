@@ -18,7 +18,7 @@ pub enum OpenUrlResult {
     BrowserUnavailable,
 }
 
-/// Linux/BSD needs non-empty `DISPLAY`, `WAYLAND_DISPLAY`, or `BROWSER`; macOS/Windows always return true.
+/// Linux/BSD needs non-empty `DISPLAY`, `WAYLAND_DISPLAY`, or `BROWSER`; macOS/Windows/Android always return true.
 /// Pure for a fixed env map. A true result is not a successful spawn.
 pub fn browser_open_likely_available_from_env(env: &HashMap<String, String>) -> bool {
     if cfg!(any(
@@ -59,7 +59,6 @@ pub fn browser_unavailable_line(url: &str, copied: bool) -> String {
     }
 }
 
-<<<<<<< HEAD
 /// Open a URL in the system's default browser/handler.
 ///
 /// Uses the platform-native opener: `open` on macOS, `xdg-open` on Linux,
@@ -72,10 +71,6 @@ pub fn browser_unavailable_line(url: &str, copied: bool) -> String {
 /// Callers should then show the URL via [`browser_unavailable_message`] (scrollback) or [`browser_unavailable_line`] (welcome toast).
 ///
 /// **Callers handling untrusted input** should call [`is_safe_to_open`] first, or use [`open_url_if_safe`] or [`try_open_url`], which combine both.
-=======
-/// Native opener with detached stdio so a GUI helper cannot block the pager.
-/// `false` on headless or spawn failure — show the URL. Untrusted input must use [`is_safe_to_open`] or [`try_open_url`].
->>>>>>> upstream/main
 pub fn open_url(url: &str) -> bool {
     // PTY e2e tests must see the open without launching a real browser
     // When this env var is set, append the URL to the file and skip the OS opener
@@ -172,7 +167,6 @@ fn spawn_url_opener(url: &str) -> bool {
     }
 }
 
-<<<<<<< HEAD
 /// Build the platform-native local-path opener command: `open` on macOS,
 /// `termux-open` on Android, and `xdg-open` on Linux/BSD; Windows uses
 /// [`reveal_in_explorer`] instead.
@@ -180,10 +174,6 @@ fn spawn_url_opener(url: &str) -> bool {
 /// [`xai_tty_utils::detach_std_command`] (`setsid`/`setpgid`) keeps the spawned GUI helper and its children from grabbing the TUI's `/dev/tty`.
 /// Split from [`open_path`] so it can be unit-tested without spawning.
 /// The path is passed as a single argument, never interpolated into a shell string.
-=======
-/// `detach_std_command` keeps the GUI helper off the TUI's `/dev/tty`. Path is one argv, never a shell string.
-/// Windows uses [`reveal_in_explorer`]. Split out so tests can inspect the command without spawning.
->>>>>>> upstream/main
 #[cfg(not(target_os = "windows"))]
 fn build_open_path_command(path: &std::path::Path) -> std::process::Command {
     #[cfg(target_os = "macos")]
@@ -574,8 +564,12 @@ mod tests {
 
     #[test]
     fn browser_unavailable_when_display_vars_empty_or_missing() {
-        if cfg!(any(target_os = "macos", target_os = "windows")) {
-            // Desktop OSes do not gate on DISPLAY.
+        if cfg!(any(
+            target_os = "macos",
+            target_os = "windows",
+            target_os = "android"
+        )) {
+            // Native desktop and Android activity-bridge openers do not gate on DISPLAY.
             assert!(browser_open_likely_available_from_env(&env(&[])));
             return;
         }

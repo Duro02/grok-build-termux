@@ -177,7 +177,6 @@ fn load_config_file(path: &Path) -> Option<SandboxConfig> {
     }
 }
 
-<<<<<<< HEAD
 /// Whether a device **file** entry is safe to pass to `allow_file` / Landlock PathFd materialization.
 ///
 /// `/dev/tty` always exists, but without a controlling terminal `open()` returns ENXIO and nono's apply aborts the **entire** ruleset.
@@ -188,12 +187,6 @@ fn load_config_file(path: &Path) -> Option<SandboxConfig> {
 /// directories are granted via [`DEVICE_DIRS`] / `allow_path`, and a plain
 /// `File::open` EISDIR does not mean Landlock would reject the grant.
 #[cfg(all(feature = "enforce", any(target_os = "linux", target_os = "macos")))]
-=======
-/// `/dev/tty` always exists, but without a controlling terminal `open()` returns ENXIO and nono's apply aborts the entire
-/// ruleset. Other open errors (notably EISDIR on directory nodes) must not drop the path: directories are granted via
-/// [`DEVICE_DIRS`] / `allow_path`. A plain `File::open` EISDIR does not mean Landlock would reject the grant.
-#[cfg(all(feature = "enforce", unix))]
->>>>>>> upstream/main
 fn device_file_openable(path: &Path) -> bool {
     match std::fs::File::open(path) {
         Ok(_) => true,

@@ -58,7 +58,6 @@ fn split_glob_root(workspace: &Path, glob: &str) -> (PathBuf, String) {
     (root, segments[first_glob_index..].join("/"))
 }
 
-<<<<<<< HEAD
 /// Validate a deny glob on BOTH platforms so a given pattern is interpreted IDENTICALLY everywhere or rejected everywhere.
 /// This keeps macOS from silently under-enforcing a pattern.
 /// Two checks, run before the macOS regex translation and the Linux globset expansion alike:
@@ -72,12 +71,6 @@ fn split_glob_root(workspace: &Path, glob: &str) -> (PathBuf, String) {
 /// 2. Compile through `globset` (the Linux matcher) so a malformed glob (`a**b`,
 ///    unterminated `[`) fails closed identically on both platforms.
 #[cfg(all(feature = "enforce", any(target_os = "linux", target_os = "macos")))]
-=======
-/// Reject `{`/`}`/`\` so a deny glob means the same thing on both platforms: globset honors brace alternation and
-/// backslash-escapes, but the Seatbelt regex cannot. Alternation is separate entries. Compile via `globset` so a
-/// malformed glob fails closed identically everywhere.
-#[cfg(all(feature = "enforce", unix))]
->>>>>>> upstream/main
 pub(crate) fn validate_deny_glob(glob: &str) -> anyhow::Result<()> {
     if let Some(c) = glob.chars().find(|&c| matches!(c, '{' | '}' | '\\')) {
         anyhow::bail!(
@@ -86,7 +79,7 @@ pub(crate) fn validate_deny_glob(glob: &str) -> anyhow::Result<()> {
              use separate deny entries)"
         );
     }
-    // `` must be a whole path component (gitignore semantics). A non-component `` (e.g. `ab`) would translate to `.*` on
+    // `**` must be a whole path component (gitignore semantics). A non-component `**` (e.g. `a**b`) would translate to `.*` on
     // macOS but collapse to `*` in globset. Reject it on both platforms so they never diverge. Empty segments (`a//*`) drift
     // the same way: globset keeps `//` literally while the macOS regex collapses it
     for (index, segment) in glob.split('/').enumerate() {
@@ -275,7 +268,6 @@ fn seatbelt_regex_filter(regex: &str) -> Option<String> {
     Some(format!("(regex #\"{escaped}\")"))
 }
 
-<<<<<<< HEAD
 /// Apply kernel-level deny rules for glob patterns.
 ///
 /// On macOS, translate each glob to an anchored Seatbelt regex and emit the same read and per-write-sub-action denies as the exact-path flow.
@@ -288,12 +280,6 @@ fn seatbelt_regex_filter(regex: &str) -> Option<String> {
 /// Seatbelt last-match ordering — the deny platform rules are emitted after the
 /// read/write allows, so the regex deny wins. The e2e is the contract.
 #[cfg(all(feature = "enforce", any(target_os = "linux", target_os = "macos")))]
-=======
-/// On Linux this is a no-op: a mount namespace can't match a regex at runtime. Unlike the exact-path flow, this does NOT
-/// call `remove_exact_file_caps_for_paths` (a glob can't enumerate the file caps it collides with). Glob denies rely on
-/// Seatbelt last-match ordering: the deny platform rules are emitted after the read/write allows, so the regex deny wins.
-#[cfg(all(feature = "enforce", unix))]
->>>>>>> upstream/main
 pub(crate) fn apply_deny_globs_to_capability_set(
     caps: &mut CapabilitySet,
     workspace: &Path,

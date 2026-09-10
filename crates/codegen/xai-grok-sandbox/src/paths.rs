@@ -18,17 +18,11 @@ pub(crate) fn sandbox_events_log_path() -> PathBuf {
 
 // ── Device files & directories ──────────────────────────────────────────────
 
-<<<<<<< HEAD
 /// Device files that need write access for normal tool operation.
 ///
 /// These are individual files (use `allow_file`, not `allow_path`).
 /// Directory nodes under `/dev` belong in [`DEVICE_DIRS`].
 #[cfg(all(feature = "enforce", any(target_os = "linux", target_os = "macos")))]
-=======
-/// Device files that need write access for normal tool operation. These are individual files (use `allow_file`, not
-/// `allow_path`). Directory nodes under `/dev` belong in [`DEVICE_DIRS`].
-#[cfg(all(feature = "enforce", unix))]
->>>>>>> upstream/main
 pub(crate) const DEVICE_FILES: &[&str] = &[
     "/dev/null",    // output sink — used by virtually every CLI tool
     "/dev/zero",    // zero source — used by memory allocators
