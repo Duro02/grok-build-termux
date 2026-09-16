@@ -42,7 +42,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Android SDK tooling
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          # The legacy 'tools' package was removed from the SDK repository;
+          # v4's default package list still includes it and would fail.
+          packages: 'platform-tools'
 
       - name: Install Android NDK
         run: sdkmanager --install "ndk;${ANDROID_NDK_VERSION}"
