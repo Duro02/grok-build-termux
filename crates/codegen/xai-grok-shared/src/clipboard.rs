@@ -2508,7 +2508,9 @@ mod platform {
 // ---------------------------------------------------------------------------
 #[cfg(target_os = "android")]
 mod platform {
-    use super::{ClipboardAttachments, ImageData, NativeWriteOutcome};
+    use super::{
+        ClipboardAttachments, ClipboardImageRead, ClipboardReadPath, NativeWriteOutcome,
+    };
     use std::io::Write;
     use std::process::{Command, Stdio};
 
@@ -2598,8 +2600,11 @@ mod platform {
         outcome
     }
 
-    pub fn get_image() -> anyhow::Result<Option<ImageData>> {
-        Ok(None)
+    pub fn get_image() -> anyhow::Result<ClipboardImageRead> {
+        Ok(ClipboardImageRead {
+            image: None,
+            read_path: ClipboardReadPath::LinuxCli,
+        })
     }
 
     pub fn set_image_file(path: &std::path::Path) -> anyhow::Result<()> {
@@ -2613,6 +2618,7 @@ mod platform {
         Ok(ClipboardAttachments {
             file_urls: None,
             image: None,
+            read_path: ClipboardReadPath::LinuxCli,
         })
     }
 
