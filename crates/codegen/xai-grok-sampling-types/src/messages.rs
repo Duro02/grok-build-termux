@@ -251,13 +251,25 @@ impl StopReason {
     }
 }
 
+/// Anthropic never emits null usage fields, but OpenAI-compatible gateways
+/// (e.g. OpenRouter) do; treat `null` as the type's default instead of failing.
+fn null_or_default<'de, D, T>(d: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Ok(Option::<T>::deserialize(d)?.unwrap_or_default())
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MessagesUsage {
+    #[serde(default, deserialize_with = "null_or_default")]
     pub input_tokens: u32,
+    #[serde(default, deserialize_with = "null_or_default")]
     pub output_tokens: u32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_or_default")]
     pub cache_creation_input_tokens: u32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_or_default")]
     pub cache_read_input_tokens: u32,
 }
 
@@ -322,6 +334,7 @@ pub struct StopDetails {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MessageDeltaUsage {
+    #[serde(default, deserialize_with = "null_or_default")]
     pub output_tokens: u32,
     #[serde(default)]
     pub input_tokens: Option<u32>,
