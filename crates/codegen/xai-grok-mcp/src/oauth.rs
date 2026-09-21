@@ -448,14 +448,10 @@ async fn build_authorization_url(
 
 fn open_consent_browser(server_name: &str, auth_url: &str) {
     tracing::info!(server = server_name, "Opening browser for OAuth consent");
-<<<<<<< HEAD
-    if let Err(e) = open_browser_url(auth_url) {
-=======
     if record_consent_url_for_test(auth_url) {
         return;
     }
-    if let Err(e) = webbrowser::open(auth_url) {
->>>>>>> upstream/main
+    if let Err(e) = open_browser_url(auth_url) {
         // eprintln! corrupts the TUI alternate screen (in-process, fd 2).
         // TODO: show the auth URL via ACP notification instead
         tracing::warn!(%e, url = %auth_url, "Failed to open browser for MCP OAuth; user must visit URL manually");
