@@ -204,6 +204,75 @@ Both fields also work on a shared `[model_providers.<id>]` block. A model that p
 
 ---
 
+## Built-in Providers
+
+This fork ships a catalog of well-known third-party providers (in the style of `pi`'s provider registry). A provider's models appear in the model catalog — `grok models`, the Ctrl+M picker, and `-m` — as soon as its credential resolves, with no `config.toml` entries needed:
+
+```sh
+export OPENAI_API_KEY=sk-...
+grok models        # openai/gpt-5.2, openai/o3, ... are now selectable
+```
+
+| Provider | Env var(s) | Example catalog key |
+| --- | --- | --- |
+| `openai` | `OPENAI_API_KEY` | `openai/gpt-5.2` |
+| `anthropic` | `ANTHROPIC_API_KEY` | `anthropic/claude-sonnet-4-5` |
+| `google` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` | `google/gemini-3-pro-preview` |
+| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek/deepseek-chat` |
+| `openrouter` | `OPENROUTER_API_KEY` | `openrouter/anthropic/claude-sonnet-4.5` |
+| `zai` | `ZAI_API_KEY` | `zai/glm-4.6` |
+| `moonshot` | `MOONSHOT_API_KEY` or `KIMI_API_KEY` | `moonshot/kimi-k2-0905-preview` |
+| `dashscope` | `DASHSCOPE_API_KEY` | `dashscope/qwen3-coder-plus` |
+| `minimax` | `MINIMAX_API_KEY` | `minimax/MiniMax-M2` |
+| `groq` | `GROQ_API_KEY` | `groq/llama-3.3-70b-versatile` |
+| `cerebras` | `CEREBRAS_API_KEY` | `cerebras/zai-glm-4.6` |
+| `mistral` | `MISTRAL_API_KEY` | `mistral/magistral-medium-latest` |
+| `together` | `TOGETHER_API_KEY` | `together/moonshotai/Kimi-K2-Instruct-0905` |
+| `nvidia` | `NVIDIA_API_KEY` | `nvidia/moonshotai/kimi-k2-instruct-0905` |
+| `fireworks` | `FIREWORKS_API_KEY` | `fireworks/accounts/fireworks/models/kimi-k2-instruct-0905` |
+| `ollama` | none (local, no key) | — |
+| `lmstudio` | none (local, no key) | — |
+
+Notes:
+
+- Anthropic models send the key in an `x-api-key` header (with `anthropic-version: 2023-06-01`) via `api_backend = "messages"`, matching the manual [Anthropic example](#anthropic-claude) below.
+- `ollama` and `lmstudio` need no API key. They carry no fixed model list; reference them from your own entries, e.g. `[model."ollama/llama3.2"] model = "llama3.2" model_provider = "ollama"`, and the model inherits the local `base_url`.
+- `openrouter` model ids keep their `owner/model` slug, so catalog keys look like `openrouter/anthropic/claude-sonnet-4.5`.
+- `models.default`, `hidden_models`, `disabled_models`, and `allowed_models` all apply to built-in keys as usual: `disabled_models = ["openai/*"]` hides a provider entirely.
+
+### Overriding a built-in provider
+
+A same-id `[model_providers.<id>]` block merges field-by-field over the built-in defaults — `base_url` alone retargets every built-in model at a proxy or gateway, and any credential fields you set win:
+
+```toml
+[model_providers.openai]
+base_url = "https://corp-gateway.example/v1"
+api_key = "sk-corp"          # or env_key = "MY_OPENAI_KEY"
+```
+
+Declaring the block also activates the provider, so its built-in models appear even without `OPENAI_API_KEY` set.
+
+Likewise, a `[model."<provider>/<model>"]` entry merges over the built-in model (inheriting its `base_url` and backend); a user entry on an inactive provider activates just that key:
+
+```toml
+[model."anthropic/claude-sonnet-4-5"]
+env_key = "CORP_ANTHROPIC_KEY"
+temperature = 0.2
+```
+
+### Limiting or disabling the catalog
+
+Set `GROK_BUILTIN_PROVIDERS` to restrict which built-in providers may activate:
+
+```sh
+export GROK_BUILTIN_PROVIDERS="openai,anthropic"   # only these two
+export GROK_BUILTIN_PROVIDERS=off                   # disable the catalog entirely
+```
+
+`all` (or unset) enables every provider; `off`, `none`, `false`, or `0` disables the feature.
+
+---
+
 ## Overriding Built-in Models
 
 You can override specific fields of built-in models without redefining everything. Only specify the fields you want to change:

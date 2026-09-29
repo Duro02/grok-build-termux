@@ -1,0 +1,230 @@
+{
+  "providers": [
+    {
+      "id": "openai",
+      "name": "OpenAI",
+      "base_url": "https://api.openai.com/v1",
+      "api_backend": "chat_completions",
+      "env_key": ["OPENAI_API_KEY"],
+      "models": [
+        { "id": "gpt-5.2", "context_window": 400000, "supports_reasoning_effort": true },
+        { "id": "gpt-5.1", "context_window": 400000, "supports_reasoning_effort": true },
+        { "id": "gpt-5", "context_window": 400000, "supports_reasoning_effort": true },
+        { "id": "gpt-5-mini", "context_window": 400000, "supports_reasoning_effort": true },
+        { "id": "gpt-5-nano", "context_window": 400000, "supports_reasoning_effort": true },
+        { "id": "gpt-5-pro", "context_window": 400000, "supports_reasoning_effort": true },
+        { "id": "gpt-4.1", "context_window": 1047576 },
+        { "id": "gpt-4.1-mini", "context_window": 1047576 },
+        { "id": "gpt-4o", "context_window": 128000 },
+        { "id": "o3", "context_window": 200000, "supports_reasoning_effort": true },
+        { "id": "o4-mini", "context_window": 200000, "supports_reasoning_effort": true },
+        { "id": "codex-mini-latest", "context_window": 200000, "supports_reasoning_effort": true }
+      ]
+    },
+    {
+      "id": "anthropic",
+      "name": "Anthropic",
+      "base_url": "https://api.anthropic.com/v1",
+      "api_backend": "messages",
+      "auth_scheme": "x_api_key",
+      "env_key": ["ANTHROPIC_API_KEY"],
+      "extra_headers": { "anthropic-version": "2023-06-01" },
+      "models": [
+        { "id": "claude-opus-4-6", "context_window": 200000 },
+        { "id": "claude-opus-4-5", "context_window": 200000 },
+        { "id": "claude-sonnet-4-5", "context_window": 200000 },
+        { "id": "claude-haiku-4-5", "context_window": 200000 },
+        { "id": "claude-opus-4-1", "context_window": 200000 },
+        { "id": "claude-sonnet-4", "context_window": 200000 },
+        { "id": "claude-opus-4", "context_window": 200000 }
+      ]
+    },
+    {
+      "id": "google",
+      "name": "Google Gemini",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+      "api_backend": "chat_completions",
+      "env_key": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+      "models": [
+        { "id": "gemini-3-pro-preview", "context_window": 1048576, "supports_reasoning_effort": true },
+        { "id": "gemini-3-flash-preview", "context_window": 1048576, "supports_reasoning_effort": true },
+        { "id": "gemini-2.5-pro", "context_window": 1048576, "supports_reasoning_effort": true },
+        { "id": "gemini-2.5-flash", "context_window": 1048576, "supports_reasoning_effort": true },
+        { "id": "gemini-2.5-flash-lite", "context_window": 1048576 }
+      ]
+    },
+    {
+      "id": "deepseek",
+      "name": "DeepSeek",
+      "base_url": "https://api.deepseek.com",
+      "api_backend": "chat_completions",
+      "env_key": ["DEEPSEEK_API_KEY"],
+      "models": [
+        { "id": "deepseek-chat", "context_window": 131072 },
+        { "id": "deepseek-reasoner", "context_window": 131072, "supports_reasoning_effort": true }
+      ]
+    },
+    {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_backend": "chat_completions",
+      "env_key": ["OPENROUTER_API_KEY"],
+      "models": [
+        { "id": "anthropic/claude-opus-4.5", "context_window": 200000 },
+        { "id": "anthropic/claude-sonnet-4.5", "context_window": 200000 },
+        { "id": "openai/gpt-5.2", "context_window": 400000, "supports_reasoning_effort": true },
+        { "id": "openai/gpt-5", "context_window": 400000, "supports_reasoning_effort": true },
+        { "id": "google/gemini-3-pro-preview", "context_window": 1048576, "supports_reasoning_effort": true },
+        { "id": "deepseek/deepseek-chat-v3.1", "context_window": 163840 },
+        { "id": "x-ai/grok-code-fast-1", "context_window": 256000 },
+        { "id": "qwen/qwen3-coder", "context_window": 262144 },
+        { "id": "moonshotai/kimi-k2-0905", "context_window": 262144 },
+        { "id": "z-ai/glm-4.6", "context_window": 204800 }
+      ]
+    },
+    {
+      "id": "zai",
+      "name": "Z.ai (GLM)",
+      "base_url": "https://api.z.ai/api/paas/v4",
+      "api_backend": "chat_completions",
+      "env_key": ["ZAI_API_KEY"],
+      "models": [
+        { "id": "glm-4.6", "context_window": 204800, "supports_reasoning_effort": true },
+        { "id": "glm-4.5", "context_window": 131072, "supports_reasoning_effort": true },
+        { "id": "glm-4.5-air", "context_window": 131072, "supports_reasoning_effort": true }
+      ]
+    },
+    {
+      "id": "moonshot",
+      "name": "Moonshot AI (Kimi)",
+      "base_url": "https://api.moonshot.ai/v1",
+      "api_backend": "chat_completions",
+      "env_key": ["MOONSHOT_API_KEY", "KIMI_API_KEY"],
+      "models": [
+        { "id": "kimi-k2-0905-preview", "context_window": 262144 },
+        { "id": "kimi-k2-turbo-preview", "context_window": 262144 },
+        { "id": "kimi-latest", "context_window": 131072 },
+        { "id": "moonshot-v1-128k", "context_window": 131072 }
+      ]
+    },
+    {
+      "id": "dashscope",
+      "name": "Alibaba DashScope (Qwen)",
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "api_backend": "chat_completions",
+      "env_key": ["DASHSCOPE_API_KEY"],
+      "models": [
+        { "id": "qwen3-coder-plus", "context_window": 1000000 },
+        { "id": "qwen3-coder-flash", "context_window": 1000000 },
+        { "id": "qwen3-max-preview", "context_window": 262144 },
+        { "id": "qwen-plus-latest", "context_window": 1000000 }
+      ]
+    },
+    {
+      "id": "minimax",
+      "name": "MiniMax",
+      "base_url": "https://api.minimax.io/v1",
+      "api_backend": "chat_completions",
+      "env_key": ["MINIMAX_API_KEY"],
+      "models": [
+        { "id": "MiniMax-M2", "context_window": 204800, "supports_reasoning_effort": true }
+      ]
+    },
+    {
+      "id": "groq",
+      "name": "Groq",
+      "base_url": "https://api.groq.com/openai/v1",
+      "api_backend": "chat_completions",
+      "env_key": ["GROQ_API_KEY"],
+      "models": [
+        { "id": "llama-3.3-70b-versatile", "context_window": 131072 },
+        { "id": "openai/gpt-oss-120b", "context_window": 131072, "supports_reasoning_effort": true },
+        { "id": "openai/gpt-oss-20b", "context_window": 131072, "supports_reasoning_effort": true },
+        { "id": "moonshotai/kimi-k2-instruct-0905", "context_window": 262144 },
+        { "id": "qwen/qwen3-32b", "context_window": 131072 }
+      ]
+    },
+    {
+      "id": "cerebras",
+      "name": "Cerebras",
+      "base_url": "https://api.cerebras.ai/v1",
+      "api_backend": "chat_completions",
+      "env_key": ["CEREBRAS_API_KEY"],
+      "models": [
+        { "id": "gpt-oss-120b", "context_window": 131072 },
+        { "id": "llama-3.3-70b", "context_window": 131072 },
+        { "id": "qwen-3-coder-480b", "context_window": 131072 },
+        { "id": "zai-glm-4.6", "context_window": 131072 }
+      ]
+    },
+    {
+      "id": "mistral",
+      "name": "Mistral AI",
+      "base_url": "https://api.mistral.ai/v1",
+      "api_backend": "chat_completions",
+      "env_key": ["MISTRAL_API_KEY"],
+      "models": [
+        { "id": "mistral-large-latest", "context_window": 131072 },
+        { "id": "codestral-latest", "context_window": 262144 },
+        { "id": "magistral-medium-latest", "context_window": 131072, "supports_reasoning_effort": true },
+        { "id": "devstral-medium-latest", "context_window": 131072 }
+      ]
+    },
+    {
+      "id": "together",
+      "name": "Together AI",
+      "base_url": "https://api.together.xyz/v1",
+      "api_backend": "chat_completions",
+      "env_key": ["TOGETHER_API_KEY"],
+      "models": [
+        { "id": "deepseek-ai/DeepSeek-V3.1", "context_window": 131072 },
+        { "id": "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8", "context_window": 262144 },
+        { "id": "moonshotai/Kimi-K2-Instruct-0905", "context_window": 262144 },
+        { "id": "openai/gpt-oss-120b", "context_window": 131072 }
+      ]
+    },
+    {
+      "id": "nvidia",
+      "name": "NVIDIA NIM",
+      "base_url": "https://integrate.api.nvidia.com/v1",
+      "api_backend": "chat_completions",
+      "env_key": ["NVIDIA_API_KEY"],
+      "models": [
+        { "id": "deepseek-ai/deepseek-v3.1", "context_window": 131072 },
+        { "id": "openai/gpt-oss-120b", "context_window": 131072 },
+        { "id": "qwen/qwen3-coder-480b-a35b-instruct", "context_window": 262144 },
+        { "id": "moonshotai/kimi-k2-instruct-0905", "context_window": 262144 }
+      ]
+    },
+    {
+      "id": "fireworks",
+      "name": "Fireworks AI",
+      "base_url": "https://api.fireworks.ai/inference/v1",
+      "api_backend": "chat_completions",
+      "env_key": ["FIREWORKS_API_KEY"],
+      "models": [
+        { "id": "accounts/fireworks/models/kimi-k2-instruct-0905", "context_window": 262144 },
+        { "id": "accounts/fireworks/models/gpt-oss-120b", "context_window": 131072 },
+        { "id": "accounts/fireworks/models/deepseek-v3.1", "context_window": 163840 },
+        { "id": "accounts/fireworks/models/qwen3-coder-480b-a35b-instruct", "context_window": 262144 }
+      ]
+    },
+    {
+      "id": "ollama",
+      "name": "Ollama (local)",
+      "base_url": "http://localhost:11434/v1",
+      "api_backend": "chat_completions",
+      "requires_key": false,
+      "models": []
+    },
+    {
+      "id": "lmstudio",
+      "name": "LM Studio (local)",
+      "base_url": "http://localhost:1234/v1",
+      "api_backend": "chat_completions",
+      "requires_key": false,
+      "models": []
+    }
+  ]
+}

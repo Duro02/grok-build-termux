@@ -5,6 +5,7 @@ use indexmap::IndexMap;
 use super::config::{ConfigModelOverride, EnvKeys};
 use super::config_model_override_parse::{ConfigWarning, ConfigWarningKind};
 use crate::sampling::ApiBackend;
+use xai_grok_sampler::AuthScheme;
 
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 #[serde(default)]
@@ -14,6 +15,8 @@ pub struct ModelProviderConfig {
     pub env_key: Option<EnvKeys>,
     pub api_key: Option<String>,
     pub api_backend: Option<ApiBackend>,
+    /// Credential header shape inherited by models (`bearer` or `x_api_key`).
+    pub auth_scheme: Option<AuthScheme>,
     pub extra_headers: IndexMap<String, String>,
     /// Query parameters folded into every request URL; inherited by models.
     pub query_params: IndexMap<String, String>,
@@ -182,6 +185,7 @@ impl ConfigModelOverride {
             env_key,
             api_key,
             api_backend,
+            auth_scheme,
             extra_headers,
             query_params,
             env_http_headers,
@@ -196,6 +200,7 @@ impl ConfigModelOverride {
         merged.base_url = merged.base_url.or_else(|| base_url.clone());
         merged.api_base_url = merged.api_base_url.or_else(|| api_base_url.clone());
         merged.api_backend = merged.api_backend.or_else(|| api_backend.clone());
+        merged.auth_scheme = merged.auth_scheme.or(*auth_scheme);
         merged.context_window = merged.context_window.or(*context_window);
         merged.max_request_bytes = merged.max_request_bytes.or(*max_request_bytes);
         // Inherited wholesale only when the model sets none of its own.
