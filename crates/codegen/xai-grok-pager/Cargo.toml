@@ -35,6 +35,9 @@ strip-ansi-escapes = { workspace = true }
 
 # Markdown / syntax highlighting
 xai-grok-markdown = { workspace = true }
+# Embedded third-party provider catalog: `/provider` and `/login` read
+# `BUILTIN_PROVIDERS_JSON` for their pickers.
+xai-grok-models = { workspace = true }
 # Inline Mermaid rendering engine. Always compiled (no feature gate): the
 # dagre-based vendored engine renders detected ```mermaid fences out of process,
 # gated only at runtime by the `appearance.render_mermaid` setting.

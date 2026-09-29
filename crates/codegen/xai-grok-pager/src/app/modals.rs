@@ -53,7 +53,9 @@ impl AgentView {
         else {
             return false;
         };
-        if args_query.is_empty() || !matches!(command.as_str(), "model" | "m") {
+        if args_query.is_empty()
+            || !matches!(command.as_str(), "model" | "m" | "provider" | "login")
+        {
             return false;
         }
         let command = command.clone();
@@ -649,41 +651,68 @@ impl AgentView {
                 InputOutcome::Changed
             }
             ArgPickerStep::Selected(item) => {
-                let chains_to_effort = matches!(command_clone.as_str(), "model" | "m")
-                    && item.insert_text.ends_with(char::is_whitespace);
+                // `/provider` and `/login` chain through provider→verb menus whose
+                // items mix terminal and chainable insert_texts; `/model`'s effort
+                // phase is all-terminal, so the guard differs.
+                let staged_picker = matches!(command_clone.as_str(), "provider" | "login");
+                let chains_to_effort =
+                    matches!(command_clone.as_str(), "model" | "m" | "provider" | "login")
+                        && item.insert_text.ends_with(char::is_whitespace);
                 if chains_to_effort {
                     let next_query = item.insert_text.clone();
-                    if let Some(cmd) = self.prompt.slash_controller.registry().get(&command_clone) {
+                    let next_items = self
+                        .prompt
+                        .slash_controller
+                        .registry()
+                        .get(&command_clone)
+                        .and_then(|cmd| {
+                            let ctx = self.prompt.slash_controller.app_ctx(&self.session.models);
+                            cmd.suggest_args(&ctx, &next_query)
+                        })
+                        .filter(|items| !items.is_empty())
+                        .filter(|items| {
+                            staged_picker || Self::arg_items_look_like_effort_phase(items)
+                        });
+                    if let Some(effort_items) = next_items
+                        && let Some(cmd) =
+                            self.prompt.slash_controller.registry().get(&command_clone)
+                    {
                         let ctx = self.prompt.slash_controller.app_ctx(&self.session.models);
-                        if let Some(effort_items) = cmd.suggest_args(&ctx, &next_query)
-                            && Self::arg_items_look_like_effort_phase(&effort_items)
+                        let selected = cmd
+                            .preselected_arg(&ctx, &next_query)
+                            .and_then(|target| {
+                                effort_items
+                                    .iter()
+                                    .position(|row| row.insert_text == target)
+                            })
+                            .unwrap_or(0);
+                        if let Some(ActiveModal::ArgPicker {
+                            args_query,
+                            items,
+                            original_items,
+                            state,
+                            ..
+                        }) = self.active_modal.as_mut()
                         {
-                            let selected = cmd
-                                .preselected_arg(&ctx, &next_query)
-                                .and_then(|target| {
-                                    effort_items
-                                        .iter()
-                                        .position(|row| row.insert_text == target)
-                                })
-                                .unwrap_or(0);
-                            if let Some(ActiveModal::ArgPicker {
-                                args_query,
-                                items,
-                                original_items,
-                                state,
-                                ..
-                            }) = self.active_modal.as_mut()
-                            {
-                                *args_query = next_query;
-                                *items = effort_items.clone();
-                                *original_items = effort_items;
-                                // Effort sub-step is part of the type-to-find /model picker
-                                // Open input-focused (cursor and type-to-filter), matching the rest of the flow
-                                *state = crate::views::picker::PickerState::input_active();
-                                state.selected = selected;
-                            }
-                            return InputOutcome::Changed;
+                            *args_query = next_query;
+                            *items = effort_items.clone();
+                            *original_items = effort_items;
+                            // Effort sub-step is part of the type-to-find /model picker
+                            // Open input-focused (cursor and type-to-filter), matching the rest of the flow
+                            *state = crate::views::picker::PickerState::input_active();
+                            state.selected = selected;
                         }
+                        return InputOutcome::Changed;
+                    }
+                    if staged_picker {
+                        // The staged pickers end on free text (API key, base URL,
+                        // model id): close the modal and leave the half-built
+                        // command in the prompt so the user just keeps typing.
+                        self.active_modal = None;
+                        let text = format!("/{} {}", command_clone, item.insert_text);
+                        self.prompt.set_text(&text);
+                        self.prompt.set_cursor(text.len());
+                        return InputOutcome::Changed;
                     }
                 }
                 let full = format!("/{} {}", command_clone, item.insert_text.trim_end());
@@ -877,8 +906,10 @@ impl AgentView {
                                     return InputOutcome::Action(Action::FetchSessionList);
                                 }
 
-                                let is_picker =
-                                    matches!(trimmed.as_str(), "model" | "m" | "theme" | "t");
+                                let is_picker = matches!(
+                                    trimmed.as_str(),
+                                    "model" | "m" | "theme" | "t" | "provider" | "login"
+                                );
                                 if is_picker
                                     && let Some(command) =
                                         self.prompt.slash_controller.registry().get(&trimmed)

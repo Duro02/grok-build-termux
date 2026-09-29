@@ -204,6 +204,125 @@ Both fields also work on a shared `[model_providers.<id>]` block. A model that p
 
 ---
 
+## Built-in Providers
+
+This fork ships a catalog of well-known third-party providers (in the style of `pi`'s provider registry). A provider's models appear in the model catalog — `grok models`, the Ctrl+M picker, and `-m` — as soon as its credential resolves, with no `config.toml` entries needed:
+
+```sh
+export OPENAI_API_KEY=sk-...
+grok models        # openai/gpt-5.2, openai/o3, ... are now selectable
+```
+
+| Provider | Env var(s) | Example catalog key |
+| --- | --- | --- |
+| `openai` | `OPENAI_API_KEY` | `openai/gpt-5.2` |
+| `anthropic` | `ANTHROPIC_API_KEY` | `anthropic/claude-sonnet-4-5` |
+| `google` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` | `google/gemini-3-pro-preview` |
+| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek/deepseek-chat` |
+| `openrouter` | `OPENROUTER_API_KEY` | `openrouter/anthropic/claude-sonnet-4.5` |
+| `zai` | `ZAI_API_KEY` | `zai/glm-4.6` |
+| `moonshot` | `MOONSHOT_API_KEY` or `KIMI_API_KEY` | `moonshot/kimi-k2-0905-preview` |
+| `dashscope` | `DASHSCOPE_API_KEY` | `dashscope/qwen3-coder-plus` |
+| `minimax` | `MINIMAX_API_KEY` | `minimax/MiniMax-M2` |
+| `groq` | `GROQ_API_KEY` | `groq/llama-3.3-70b-versatile` |
+| `cerebras` | `CEREBRAS_API_KEY` | `cerebras/zai-glm-4.6` |
+| `mistral` | `MISTRAL_API_KEY` | `mistral/magistral-medium-latest` |
+| `together` | `TOGETHER_API_KEY` | `together/moonshotai/Kimi-K2-Instruct-0905` |
+| `nvidia` | `NVIDIA_API_KEY` | `nvidia/moonshotai/kimi-k2-instruct-0905` |
+| `fireworks` | `FIREWORKS_API_KEY` | `fireworks/accounts/fireworks/models/kimi-k2-instruct-0905` |
+| `openai-codex` | OAuth (`/login openai-codex`) | `openai-codex/gpt-5.2-codex` |
+| `github-copilot` | OAuth (`/login github-copilot`) | `github-copilot/gpt-4.1` |
+| `kimi-coding` | `KIMI_API_KEY` or OAuth (`/login kimi-coding`) | `kimi-coding/kimi-for-coding` |
+| `meta` | `META_API_KEY` or OAuth (`/login meta`) | `meta/llama-4-maverick` |
+| `ollama` | none (local, no key) | — |
+| `lmstudio` | none (local, no key) | — |
+
+Notes:
+
+- Anthropic models send the key in an `x-api-key` header (with `anthropic-version: 2023-06-01`) via `api_backend = "messages"`, matching the manual [Anthropic example](#anthropic-claude) below.
+- `ollama` and `lmstudio` need no API key. They carry no fixed model list; reference them from your own entries, e.g. `[model."ollama/llama3.2"] model = "llama3.2" model_provider = "ollama"`, and the model inherits the local `base_url`.
+- `openrouter` model ids keep their `owner/model` slug, so catalog keys look like `openrouter/anthropic/claude-sonnet-4.5`.
+- `models.default`, `hidden_models`, `disabled_models`, and `allowed_models` all apply to built-in keys as usual: `disabled_models = ["openai/*"]` hides a provider entirely.
+
+#### OAuth sign-in (subscription logins)
+
+Six providers authenticate with your browser/identity instead of an API key — the same set `pi` supports, minus xAI (covered by Grok.com login) and the enterprise Radius gateway. Pick the provider in `/login` (or run `/provider oauth <id>`) and choose browser sign-in where offered; device-code flows print a URL + code inline:
+
+| Provider | Flow | Credential |
+| --- | --- | --- |
+| `openai-codex` | browser PKCE **or** device code | ChatGPT Plus/Pro subscription → Codex backend |
+| `anthropic` | browser PKCE | Claude Pro/Max subscription |
+| `github-copilot` | device code | Copilot subscription; per-request session tokens mint automatically |
+| `kimi-coding` | device code | Kimi For Coding subscription |
+| `meta` | device code | Meta identity → Muse API key (~24 h, re-minted automatically) |
+| `openrouter` | browser PKCE | long-lived OpenRouter API key |
+
+Credentials land in `<grok_home>/provider-auth.json` and refresh transparently; the sign-in also writes a small `[model_providers.<id>]` block (`auth = { oauth = "<id>" }`, plus `api_key` for OpenRouter) so the provider activates without env vars. Headless setups get the redirect/code to a different machine with `/provider oauth <id> code <input>`; `/provider oauth <id> logout` clears the stored credential and the config fields it wrote.
+
+For providers without a built-in flow you can still plug an external credential helper into `[auth_provider.<name>]` (its `command` prints the token), and point a model at it with `auth_provider = "<name>"`.
+
+### Overriding a built-in provider
+
+A same-id `[model_providers.<id>]` block merges field-by-field over the built-in defaults — `base_url` alone retargets every built-in model at a proxy or gateway, and any credential fields you set win:
+
+```toml
+[model_providers.openai]
+base_url = "https://corp-gateway.example/v1"
+api_key = "sk-corp"          # or env_key = "MY_OPENAI_KEY"
+```
+
+Declaring the block also activates the provider, so its built-in models appear even without `OPENAI_API_KEY` set.
+
+Likewise, a `[model."<provider>/<model>"]` entry merges over the built-in model (inheriting its `base_url` and backend); a user entry on an inactive provider activates just that key:
+
+```toml
+[model."anthropic/claude-sonnet-4-5"]
+env_key = "CORP_ANTHROPIC_KEY"
+temperature = 0.2
+```
+
+### Limiting or disabling the catalog
+
+Set `GROK_BUILTIN_PROVIDERS` to restrict which built-in providers may activate:
+
+```sh
+export GROK_BUILTIN_PROVIDERS="openai,anthropic"   # only these two
+export GROK_BUILTIN_PROVIDERS=off                   # disable the catalog entirely
+```
+
+`all` (or unset) enables every provider; `off`, `none`, `false`, or `0` disables the feature.
+
+### `/provider` slash command
+
+Inside a session, `/provider` manages providers without editing `config.toml` by hand — it writes the same `[model_providers]`/`[model]` blocks for you, and the running session reloads the model list automatically when the file changes:
+
+```
+/provider                                  list providers and their status
+/provider <id>                             show one provider
+/provider use <id>                         activate a built-in provider without an env key
+/provider add <id> <base-url> [options]    register a custom provider
+/provider key <id> <api-key>               store a literal API key on a provider
+/provider oauth <id> [device]              built-in OAuth sign-in (browser/device)
+/provider oauth <id> code <input>          feed a pasted redirect/code into a running login
+/provider oauth <id> logout                clear stored OAuth credentials
+/provider model <id> <model> [options]     add a model to a provider
+/provider remove <id> [<model>]            remove a provider or one of its models
+```
+
+Options for `add`: `--backend chat_completions|responses|messages`, `--auth-scheme bearer|x_api_key`, `--env-key NAME[,NAME2]`, `--key <api-key>`, `--header 'Name=value'` (repeatable), `--context-window <tokens>`. Options for `model`: `--name`, `--context-window`.
+
+Examples — enable a local Ollama model, or point grok at an OpenAI-compatible gateway:
+
+```
+/provider use ollama
+/provider model ollama llama3.2 --name "Llama 3.2"
+/provider add my-gateway https://gw.example.com/v1 --backend responses --env-key MY_GW_KEY
+```
+
+Prefer `--env-key` over `--key`: slash-command arguments are stored in the session transcript, so an inline key is exposed there; `env_key` stores only the variable name.
+
+---
+
 ## Overriding Built-in Models
 
 You can override specific fields of built-in models without redefining everything. Only specify the fields you want to change:

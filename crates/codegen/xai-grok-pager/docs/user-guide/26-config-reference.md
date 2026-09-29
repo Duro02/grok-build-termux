@@ -79,6 +79,7 @@ User-level configuration lives in `$GROK_HOME/config.toml` (default `~/.grok/con
 | Key | Type / Values | Requirements | Managed | Details |
 | --- | --- | --- | --- | --- |
 | `auth_provider.<name>` | `table` | `yes` | `user` | Named credential helper used by `[model.<id>] auth_provider`. |
+| `auth_provider.<name>.oauth` | `string` | `yes` | `user` | Built-in OAuth provider id (`openai-codex`, `anthropic`, `github-copilot`, `kimi-coding`, `meta`, `openrouter`); mints tokens from `provider-auth.json` in-process — no `command` needed. Written by `/provider oauth <id>` as `[model_providers.<id>].auth = { oauth = "<id>" }`. |
 
 ### `auto_mode`
 
@@ -377,6 +378,7 @@ User-level configuration lives in `$GROK_HOME/config.toml` (default `~/.grok/con
 | `model.<id>.api_base_url` | `string` | `yes` | `user` | Alternate API base used with XAI_API_KEY resolution. |
 | `model.<id>.api_key` | `string` | `yes` | `user` | Inline API key. Prefer `env_key`. Not a secret to put in a shared repo. |
 | `model.<id>.auth_provider` | `string` | `yes` | `user` | Name of a `[auth_provider.<name>]` helper that mints this model's bearer token. |
+| `model.<id>.auth_scheme` | `bearer / x_api_key` | `yes` | `user` | Credential header shape: `bearer` (default) sends `Authorization: Bearer`, `x_api_key` sends an `x-api-key` header (Anthropic-style keys). |
 | `model.<id>.auto_compact_threshold_percent` | `integer` | `yes` | `user` | Per-model auto-compact threshold (0-100). |
 | `model.<id>.base_url` | `string` | `yes` | `user` | Provider endpoint base URL. |
 | `model.<id>.compaction_at_tokens` | `number / table` | `yes` | `user` | Token threshold that triggers compaction for this model. |

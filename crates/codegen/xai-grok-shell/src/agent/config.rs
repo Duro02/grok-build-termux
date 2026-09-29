@@ -1989,6 +1989,8 @@ impl Config {
             .and_then(toml::Value::as_table)
             .map(|t| t.keys().map(String::as_str).collect())
             .unwrap_or_default();
+        // Built-in provider ids are always defined, even with no `[model_providers]` table.
+        let effective_providers = super::builtin_providers::effective_model_providers(&config);
         for (model_key, model) in &config.config_models {
             if let Some(ref name) = model.auth_provider
                 && !config.auth_providers.contains_key(name)
@@ -2007,7 +2009,7 @@ impl Config {
                 );
             }
             if let Some(ref id) = model.model_provider
-                && !config.model_providers.contains_key(id)
+                && !effective_providers.contains_key(id)
                 && !declared_model_provider_names.contains(id.as_str())
             {
                 config.config_warnings.push(
@@ -3357,10 +3359,20 @@ pub(crate) fn resolve_model_list(
         }
         resolved = prefetched;
     }
+    // Built-in third-party providers (pi-style catalog): their models resolve as
+    // lowest-priority `[model.*]` entries, before the user's own, so a same-key
+    // user entry overrides them. Provider defaults come from the merged map, where
+    // a user's `[model_providers.<id>]` entry wins field-by-field over the builtin.
+    let builtin_overrides = super::builtin_providers::builtin_model_overrides(cfg);
+    let effective_providers = super::builtin_providers::effective_model_providers(cfg);
     let mut explicit_api_backend_keys = std::collections::HashSet::new();
     let mut explicit_supports_effort_false_keys = std::collections::HashSet::new();
     let mut explicit_menu_keys = std::collections::HashSet::new();
-    for (key, model_override) in &cfg.config_models {
+    for (key, model_override) in builtin_overrides
+        .iter()
+        .map(|(k, v)| (k, v))
+        .chain(cfg.config_models.iter())
+    {
         let had_base = resolved.contains_key(key);
         let base = resolved.shift_remove(key);
         if !had_base {
@@ -3375,7 +3387,7 @@ pub(crate) fn resolve_model_list(
             }
         }
         let with_provider = model_override.model_provider.as_deref().map(|pid| {
-            match cfg.model_providers.get(pid) {
+            match effective_providers.get(pid) {
                 Some(provider) => model_override.with_provider_defaults(provider, pid),
                 None => model_override.with_missing_provider(),
             }
@@ -3937,6 +3949,9 @@ pub struct ConfigModelOverride {
     pub temperature: Option<f32>,
     pub top_p: Option<f32>,
     pub api_backend: Option<ApiBackend>,
+    /// Credential header shape: `bearer` (default) sends `Authorization: Bearer`,
+    /// `x_api_key` sends `x-api-key` (Anthropic-style API keys).
+    pub auth_scheme: Option<AuthScheme>,
     #[serde(default)]
     pub extra_headers: IndexMap<String, String>,
     #[serde(default)]
@@ -4011,6 +4026,9 @@ impl ConfigModelOverride {
         }
         if let Some(ref v) = self.api_backend {
             entry.info.api_backend = v.clone();
+        }
+        if let Some(v) = self.auth_scheme {
+            entry.info.auth_scheme = v;
         }
         if !self.extra_headers.is_empty() {
             entry.info.extra_headers = self.extra_headers.clone();

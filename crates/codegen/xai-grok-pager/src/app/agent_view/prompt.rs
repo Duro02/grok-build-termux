@@ -1155,10 +1155,12 @@ mod slash_menu_enter_tests {
     #[test]
     fn enter_sends_highlighted_command_not_typed_prefix() {
         let mut agent = agent_with_slash("/log");
-        select_display(&mut agent, "/login");
+        // `/logout` takes no args: Enter dispatches it in one step, unlike `/login`
+        // which now opens the provider-key picker first.
+        select_display(&mut agent, "/logout");
         let outcome = agent.handle_prompt_key_for_test(&enter());
         assert!(
-            matches!(outcome, InputOutcome::Action(Action::SendPrompt(ref text)) if text == "/login"),
+            matches!(outcome, InputOutcome::Action(Action::SendPrompt(ref text)) if text == "/logout"),
             "got {outcome:?}; prompt={:?}",
             agent.prompt.text()
         );
