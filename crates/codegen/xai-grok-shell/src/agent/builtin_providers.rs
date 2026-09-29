@@ -241,6 +241,100 @@ fn provider_active(
             .is_some_and(|keys| keys.resolve_value_with(getenv).is_some())
 }
 
+/// One row of provider state for `/provider` listings.
+#[derive(Debug)]
+pub(crate) struct ProviderStatus {
+    pub id: String,
+    /// Whether the provider comes from the built-in catalog.
+    pub builtin: bool,
+    /// Whether a `[model_providers.<id>]` block exists in user config.
+    pub user_defined: bool,
+    /// Whether `GROK_BUILTIN_PROVIDERS` permits the provider (always true for user-only providers).
+    pub allowed: bool,
+    /// Whether the provider is *active* (credential resolves, keyless, or user-declared).
+    pub active: bool,
+    /// Whether the provider requires an API key to be usable.
+    pub requires_key: bool,
+    /// Base URL the merged provider resolves to, when known.
+    pub base_url: Option<String>,
+    /// Env var names the provider reads its API key from.
+    pub env_keys: Vec<String>,
+    /// Wire backend (`chat_completions` etc.) when set.
+    pub api_backend: Option<ApiBackend>,
+    /// Number of catalog models the provider contributes (built-ins only).
+    pub model_count: usize,
+}
+
+/// `/provider` list state: every filter-aware built-in provider plus user-defined
+/// providers not in the catalog, in catalog-then-config order.
+pub(crate) fn provider_statuses(cfg: &Config) -> Vec<ProviderStatus> {
+    let mut getenv = read_env;
+    let effective = effective_model_providers(cfg);
+    let mut rows = Vec::new();
+    for (id, provider) in CATALOG.iter() {
+        let allowed = filter_allows(id, &mut getenv);
+        let merged = effective.get(id);
+        let user_defined = cfg.model_providers.contains_key(id);
+        let active = merged
+            .is_some_and(|m| allowed && provider_active(provider, m, user_defined, &mut getenv));
+        rows.push(ProviderStatus {
+            id: id.clone(),
+            builtin: true,
+            user_defined,
+            allowed,
+            active,
+            requires_key: provider.requires_key.unwrap_or(true),
+            base_url: merged.and_then(|m| m.base_url.clone()),
+            env_keys: provider
+                .env_key
+                .as_ref()
+                .map(|k| k.names().iter().map(|s| (*s).to_string()).collect())
+                .unwrap_or_default(),
+            api_backend: merged.and_then(|m| m.api_backend.clone()),
+            model_count: provider.models.len(),
+        });
+    }
+    for (id, user) in &cfg.model_providers {
+        if CATALOG.contains_key(id) {
+            continue;
+        }
+        rows.push(ProviderStatus {
+            id: id.clone(),
+            builtin: false,
+            user_defined: true,
+            allowed: true,
+            active: true,
+            requires_key: true,
+            base_url: user.base_url.clone(),
+            env_keys: user
+                .env_key
+                .as_ref()
+                .map(|k| k.names().iter().map(|s| (*s).to_string()).collect())
+                .unwrap_or_default(),
+            api_backend: user.api_backend.clone(),
+            model_count: cfg
+                .config_models
+                .values()
+                .filter(|m| m.model_provider.as_deref() == Some(id.as_str()))
+                .count(),
+        });
+    }
+    rows
+}
+
+/// Whether `id` names a built-in catalog provider.
+pub(crate) fn is_builtin_id(id: &str) -> bool {
+    CATALOG.contains_key(id)
+}
+
+/// Catalog model ids of a built-in provider (empty for non-builtins).
+pub(crate) fn builtin_model_ids(id: &str) -> Vec<String> {
+    match CATALOG.get(id) {
+        Some(p) => p.models.iter().map(|m| m.id.clone()).collect(),
+        None => Vec::new(),
+    }
+}
+
 /// Synthesized `[model.*]` overrides contributed by active built-in providers, in
 /// catalog order. `resolve_model_list` resolves these before the user's own
 /// `[model.*]` entries, so a same-key user entry wins.

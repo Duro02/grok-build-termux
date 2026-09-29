@@ -561,6 +561,7 @@ pub mod plan_mode;
 pub mod prompt_history;
 pub mod prompt_parser;
 pub(crate) mod prompt_timing;
+pub(crate) mod provider_command;
 pub(crate) mod replay_events;
 pub mod repo_changes;
 #[path = "restore_stub.rs"]

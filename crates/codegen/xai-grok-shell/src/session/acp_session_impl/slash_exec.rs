@@ -832,6 +832,14 @@ impl SessionActor {
                 self.send_host_turn_slash_command_output(&msg).await;
                 ok_end_turn(0, None)
             }
+            BuiltinAction::Provider(op) => {
+                // Box::pin keeps this already-enormous match future from growing:
+                // the provider_command::run future is large (RMW chain) and would
+                // otherwise be inlined into the parent future's stack frame.
+                let text = Box::pin(crate::session::provider_command::run(&op)).await;
+                self.send_host_turn_slash_command_output(&text).await;
+                ok_end_turn(0, None)
+            }
             BuiltinAction::GoalStatus => {
                 let current_tokens = self.chat_state_handle.get_total_tokens().await as i64;
                 let goal_tokens = self.goal_tokens_used(current_tokens);

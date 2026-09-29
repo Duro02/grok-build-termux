@@ -609,6 +609,7 @@ fn available_commands_orders_builtins_first() {
             "hooks-untrust",
             "plugins",
             "reload-plugins",
+            "provider",
             "session-info",
             "feedback",
             "deep-research",

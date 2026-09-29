@@ -271,6 +271,32 @@ export GROK_BUILTIN_PROVIDERS=off                   # disable the catalog entire
 
 `all` (or unset) enables every provider; `off`, `none`, `false`, or `0` disables the feature.
 
+### `/provider` slash command
+
+Inside a session, `/provider` manages providers without editing `config.toml` by hand — it writes the same `[model_providers]`/`[model]` blocks for you, and the running session reloads the model list automatically when the file changes:
+
+```
+/provider                                  list providers and their status
+/provider <id>                             show one provider
+/provider use <id>                         activate a built-in provider without an env key
+/provider add <id> <base-url> [options]    register a custom provider
+/provider key <id> <api-key>               store a literal API key on a provider
+/provider model <id> <model> [options]     add a model to a provider
+/provider remove <id> [<model>]            remove a provider or one of its models
+```
+
+Options for `add`: `--backend chat_completions|responses|messages`, `--auth-scheme bearer|x_api_key`, `--env-key NAME[,NAME2]`, `--key <api-key>`, `--header 'Name=value'` (repeatable), `--context-window <tokens>`. Options for `model`: `--name`, `--context-window`.
+
+Examples — enable a local Ollama model, or point grok at an OpenAI-compatible gateway:
+
+```
+/provider use ollama
+/provider model ollama llama3.2 --name "Llama 3.2"
+/provider add my-gateway https://gw.example.com/v1 --backend responses --env-key MY_GW_KEY
+```
+
+Prefer `--env-key` over `--key`: slash-command arguments are stored in the session transcript, so an inline key is exposed there; `env_key` stores only the variable name.
+
 ---
 
 ## Overriding Built-in Models
