@@ -14179,6 +14179,7 @@ dependencies = [
  "xai-grok-login",
  "xai-grok-markdown",
  "xai-grok-mermaid",
+ "xai-grok-models",
  "xai-grok-otel",
  "xai-grok-pager-diff",
  "xai-grok-pager-render",
