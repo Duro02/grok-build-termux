@@ -51,6 +51,9 @@ struct BuiltinProvider {
     context_window: Option<u64>,
     max_request_bytes: Option<u64>,
     requires_key: Option<bool>,
+    /// Built-in OAuth flow id (`provider_oauth::spec_for`); informational —
+    /// login writes the actual `[model_providers.<id>.auth]` helper block.
+    oauth: Option<String>,
     models: Vec<BuiltinModel>,
 }
 
@@ -69,6 +72,7 @@ impl Default for BuiltinProvider {
             context_window: None,
             max_request_bytes: None,
             requires_key: None,
+            oauth: None,
             models: Vec::new(),
         }
     }
@@ -231,6 +235,12 @@ fn provider_active(
     if user_defined || !provider.requires_key.unwrap_or(true) {
         return true;
     }
+    // Stored OAuth credentials count as signed in.
+    if let Some(oauth_id) = provider.oauth.as_deref()
+        && xai_grok_login::provider_oauth::load_credentials(oauth_id).is_some()
+    {
+        return true;
+    }
     merged
         .api_key
         .as_deref()
@@ -263,6 +273,8 @@ pub(crate) struct ProviderStatus {
     pub api_backend: Option<ApiBackend>,
     /// Number of catalog models the provider contributes (built-ins only).
     pub model_count: usize,
+    /// Built-in OAuth flow id, when the provider supports browser/device login.
+    pub oauth: Option<String>,
 }
 
 /// `/provider` list state: every filter-aware built-in provider plus user-defined
@@ -292,6 +304,7 @@ pub(crate) fn provider_statuses(cfg: &Config) -> Vec<ProviderStatus> {
                 .unwrap_or_default(),
             api_backend: merged.and_then(|m| m.api_backend.clone()),
             model_count: provider.models.len(),
+            oauth: provider.oauth.clone(),
         });
     }
     for (id, user) in &cfg.model_providers {
@@ -317,6 +330,7 @@ pub(crate) fn provider_statuses(cfg: &Config) -> Vec<ProviderStatus> {
                 .values()
                 .filter(|m| m.model_provider.as_deref() == Some(id.as_str()))
                 .count(),
+            oauth: None,
         });
     }
     rows

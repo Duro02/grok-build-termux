@@ -23,14 +23,52 @@ impl SlashCommand for LoginCommand {
     }
 
     fn suggest_args(&self, _ctx: &AppCtx, args_query: &str) -> Option<Vec<ArgItem>> {
-        // The only choice is the first token: where the credential goes.
-        // Everything after it is free text (the key, or `add` fields).
         let trimmed = args_query.trim_start();
         let first = trimmed.split_whitespace().next().unwrap_or("");
-        if !first.is_empty()
-            && (trimmed.ends_with(char::is_whitespace)
-                || trimmed.split_whitespace().nth(1).is_some())
-        {
+        // Stage 2: an OAuth-capable provider was picked — choose how to sign in.
+        // (Second token means we're past stage 2 — `key`/free text follows.)
+        if trimmed.ends_with(char::is_whitespace) && trimmed.split_whitespace().count() == 1 {
+            if let Some(spec) = xai_grok_login::provider_oauth::spec_for(first) {
+                let (display, description) = match spec.flow {
+                    xai_grok_login::provider_oauth::OAuthFlow::PkceLoopback(_) => (
+                        "sign in (browser)",
+                        "opens a browser; manual paste supported",
+                    ),
+                    xai_grok_login::provider_oauth::OAuthFlow::DeviceCode(_) => (
+                        "sign in (device code)",
+                        "open the link on any device and enter the code",
+                    ),
+                };
+                let mut items = vec![ArgItem {
+                    display: display.to_string(),
+                    match_text: format!("{first} oauth sign in login"),
+                    insert_text: format!("{first} oauth"),
+                    description: description.to_string(),
+                }];
+                if spec.device_flow.is_some()
+                    && matches!(
+                        spec.flow,
+                        xai_grok_login::provider_oauth::OAuthFlow::PkceLoopback(_)
+                    )
+                {
+                    items.push(ArgItem {
+                        display: "device code sign-in".to_string(),
+                        match_text: format!("{first} oauth device headless ssh"),
+                        insert_text: format!("{first} oauth device"),
+                        description: "for headless/SSH — open a link on another device".to_string(),
+                    });
+                }
+                items.push(ArgItem {
+                    display: "API key".to_string(),
+                    match_text: format!("{first} api key manual"),
+                    insert_text: format!("{first} key "),
+                    description: "type the key next".to_string(),
+                });
+                return Some(items);
+            }
+            return None;
+        }
+        if !first.is_empty() && trimmed.split_whitespace().nth(1).is_some() {
             return None;
         }
         let mut items = vec![ArgItem {
@@ -43,9 +81,20 @@ impl SlashCommand for LoginCommand {
             .into_iter()
             .filter(|r| r.requires_key || !r.builtin)
         {
+            let (display, match_text) = if row.oauth.is_some() {
+                (
+                    display_name(&row).to_string(),
+                    format!("{} {} oauth sign in api key", row.id, row.name),
+                )
+            } else {
+                (
+                    format!("{} API key", display_name(&row)),
+                    format!("{} {} api key", row.id, row.name),
+                )
+            };
             items.push(ArgItem {
-                display: format!("{} API key", display_name(&row)),
-                match_text: format!("{} {} api key", row.id, row.name),
+                display,
+                match_text,
                 insert_text: format!("{} ", row.id),
                 description: row_description(&row),
             });
@@ -71,9 +120,34 @@ impl SlashCommand for LoginCommand {
             );
         }
         if args == "add" || args.starts_with("add ") {
-            CommandResult::PassThrough(format!("/provider {args}"))
-        } else {
-            CommandResult::PassThrough(format!("/provider key {args}"))
+            return CommandResult::PassThrough(format!("/provider {args}"));
+        }
+        // `/login <id> oauth [device]` and `/login <id> key <key>` come from
+        // the stage-2 picker; bare `/login <id> <key>` still means key entry.
+        let mut words = args.split_whitespace();
+        let id = words.next().unwrap_or_default();
+        match words.next() {
+            Some("oauth") => {
+                let mut cmd = format!("/provider oauth {id}");
+                if let Some(method) = words.next() {
+                    cmd.push(' ');
+                    cmd.push_str(method);
+                }
+                CommandResult::PassThrough(cmd)
+            }
+            Some("key") => {
+                let key = args
+                    .split_once(char::is_whitespace)
+                    .and_then(|(_, r)| r.split_once(char::is_whitespace))
+                    .map(|(_, r)| r.trim().to_string())
+                    .unwrap_or_default();
+                if key.is_empty() {
+                    CommandResult::PassThrough(format!("/provider key {id}"))
+                } else {
+                    CommandResult::PassThrough(format!("/provider key {id} {key}"))
+                }
+            }
+            _ => CommandResult::PassThrough(format!("/provider key {args}")),
         }
     }
 }

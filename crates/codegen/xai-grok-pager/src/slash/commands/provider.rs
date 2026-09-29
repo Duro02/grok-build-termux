@@ -35,6 +35,9 @@ pub(crate) struct ProviderRow {
     pub base_url: String,
     /// Env var names the provider reads its API key from.
     pub env_keys: Vec<String>,
+    /// Built-in OAuth flow id — the provider offers browser/device sign-in
+    /// through `/provider oauth <id>`.
+    pub oauth: Option<String>,
 }
 
 struct CatalogProvider {
@@ -43,6 +46,7 @@ struct CatalogProvider {
     base_url: String,
     requires_key: bool,
     env_keys: Vec<String>,
+    oauth: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -53,6 +57,7 @@ struct JsonProvider {
     requires_key: Option<bool>,
     #[serde(default)]
     env_key: Vec<String>,
+    oauth: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -73,6 +78,7 @@ static CATALOG: LazyLock<Vec<CatalogProvider>> = LazyLock::new(|| {
             base_url: p.base_url.unwrap_or_default(),
             requires_key: p.requires_key.unwrap_or(true),
             env_keys: p.env_key,
+            oauth: p.oauth,
             id: p.id,
         })
         .collect()
@@ -150,10 +156,16 @@ pub(crate) fn provider_rows() -> Vec<ProviderRow> {
             name: p.name.clone(),
             builtin: true,
             user_defined,
-            active: user_defined || !p.requires_key || env_set,
+            active: user_defined
+                || !p.requires_key
+                || env_set
+                || p.oauth.as_deref().is_some_and(|id| {
+                    xai_grok_login::provider_oauth::load_credentials(id).is_some()
+                }),
             requires_key: p.requires_key,
             base_url: p.base_url.clone(),
             env_keys: p.env_keys.clone(),
+            oauth: p.oauth.clone(),
         });
     }
     for (id, base_url) in user {
@@ -169,6 +181,7 @@ pub(crate) fn provider_rows() -> Vec<ProviderRow> {
             requires_key: true,
             base_url,
             env_keys: Vec::new(),
+            oauth: None,
         });
     }
     rows
@@ -225,6 +238,13 @@ fn stage_one_items() -> Vec<ArgItem> {
 fn verb_items(row: &ProviderRow) -> Vec<ArgItem> {
     let id = row.id.as_str();
     let mut specs: Vec<(&str, String, String)> = Vec::new();
+    if row.oauth.is_some() {
+        specs.push((
+            "sign in (browser)",
+            format!("oauth {id}"),
+            "browser / device sign-in — subscription login".to_string(),
+        ));
+    }
     if row.requires_key {
         specs.push((
             "api key",
@@ -330,6 +350,13 @@ fn verb_arg_items(verb: &str, rest: &str) -> Option<Vec<ArgItem>> {
                 .map(|r| provider_item_for(verb, true, r))
                 .collect()
         }),
+        // `/provider oauth <id>`: OAuth-capable providers only.
+        "oauth" => (slot == 0).then(|| {
+            rows.iter()
+                .filter(|r| r.oauth.is_some())
+                .map(|r| provider_item_for(verb, true, r))
+                .collect()
+        }),
         // `/provider key|model <id> <free text>`: complete the id with a
         // trailing space so the chain marker hands the last arg to the user.
         "key" | "model" => (slot == 0).then(|| {
@@ -393,7 +420,7 @@ impl SlashCommand for ProviderCommand {
             // "add <id> <base-url> [flags]" is all free text.
             return None;
         }
-        if ["use", "key", "model", "remove", "rm"].contains(&first) {
+        if ["use", "key", "model", "remove", "rm", "oauth"].contains(&first) {
             return verb_arg_items(first, rest);
         }
         // "<id>" picked or typed: the verb menu. Extra text just narrows it.

@@ -230,6 +230,10 @@ grok models        # openai/gpt-5.2, openai/o3, ... are now selectable
 | `together` | `TOGETHER_API_KEY` | `together/moonshotai/Kimi-K2-Instruct-0905` |
 | `nvidia` | `NVIDIA_API_KEY` | `nvidia/moonshotai/kimi-k2-instruct-0905` |
 | `fireworks` | `FIREWORKS_API_KEY` | `fireworks/accounts/fireworks/models/kimi-k2-instruct-0905` |
+| `openai-codex` | OAuth (`/login openai-codex`) | `openai-codex/gpt-5.2-codex` |
+| `github-copilot` | OAuth (`/login github-copilot`) | `github-copilot/gpt-4.1` |
+| `kimi-coding` | `KIMI_API_KEY` or OAuth (`/login kimi-coding`) | `kimi-coding/kimi-for-coding` |
+| `meta` | `META_API_KEY` or OAuth (`/login meta`) | `meta/llama-4-maverick` |
 | `ollama` | none (local, no key) | — |
 | `lmstudio` | none (local, no key) | — |
 
@@ -239,6 +243,23 @@ Notes:
 - `ollama` and `lmstudio` need no API key. They carry no fixed model list; reference them from your own entries, e.g. `[model."ollama/llama3.2"] model = "llama3.2" model_provider = "ollama"`, and the model inherits the local `base_url`.
 - `openrouter` model ids keep their `owner/model` slug, so catalog keys look like `openrouter/anthropic/claude-sonnet-4.5`.
 - `models.default`, `hidden_models`, `disabled_models`, and `allowed_models` all apply to built-in keys as usual: `disabled_models = ["openai/*"]` hides a provider entirely.
+
+#### OAuth sign-in (subscription logins)
+
+Six providers authenticate with your browser/identity instead of an API key — the same set `pi` supports, minus xAI (covered by Grok.com login) and the enterprise Radius gateway. Pick the provider in `/login` (or run `/provider oauth <id>`) and choose browser sign-in where offered; device-code flows print a URL + code inline:
+
+| Provider | Flow | Credential |
+| --- | --- | --- |
+| `openai-codex` | browser PKCE **or** device code | ChatGPT Plus/Pro subscription → Codex backend |
+| `anthropic` | browser PKCE | Claude Pro/Max subscription |
+| `github-copilot` | device code | Copilot subscription; per-request session tokens mint automatically |
+| `kimi-coding` | device code | Kimi For Coding subscription |
+| `meta` | device code | Meta identity → Muse API key (~24 h, re-minted automatically) |
+| `openrouter` | browser PKCE | long-lived OpenRouter API key |
+
+Credentials land in `<grok_home>/provider-auth.json` and refresh transparently; the sign-in also writes a small `[model_providers.<id>]` block (`auth = { oauth = "<id>" }`, plus `api_key` for OpenRouter) so the provider activates without env vars. Headless setups get the redirect/code to a different machine with `/provider oauth <id> code <input>`; `/provider oauth <id> logout` clears the stored credential and the config fields it wrote.
+
+For providers without a built-in flow you can still plug an external credential helper into `[auth_provider.<name>]` (its `command` prints the token), and point a model at it with `auth_provider = "<name>"`.
 
 ### Overriding a built-in provider
 
@@ -281,6 +302,9 @@ Inside a session, `/provider` manages providers without editing `config.toml` by
 /provider use <id>                         activate a built-in provider without an env key
 /provider add <id> <base-url> [options]    register a custom provider
 /provider key <id> <api-key>               store a literal API key on a provider
+/provider oauth <id> [device]              built-in OAuth sign-in (browser/device)
+/provider oauth <id> code <input>          feed a pasted redirect/code into a running login
+/provider oauth <id> logout                clear stored OAuth credentials
 /provider model <id> <model> [options]     add a model to a provider
 /provider remove <id> [<model>]            remove a provider or one of its models
 ```

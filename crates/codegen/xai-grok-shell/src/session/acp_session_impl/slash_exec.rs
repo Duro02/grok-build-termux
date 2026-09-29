@@ -836,7 +836,39 @@ impl SessionActor {
                 // Box::pin keeps this already-enormous match future from growing:
                 // the provider_command::run future is large (RMW chain) and would
                 // otherwise be inlined into the parent future's stack frame.
-                let text = Box::pin(crate::session::provider_command::run(&op)).await;
+                struct SlashUi<'a> {
+                    actor: &'a SessionActor,
+                    provider_id: String,
+                }
+                #[async_trait::async_trait(?Send)]
+                impl xai_grok_login::provider_oauth::LoginUi for SlashUi<'_> {
+                    async fn notice(
+                        &mut self,
+                        notice: xai_grok_login::provider_oauth::LoginNotice,
+                    ) {
+                        self.actor
+                            .send_host_turn_slash_command_output(
+                                &crate::session::provider_command::oauth_notice_text(
+                                    &self.provider_id,
+                                    &notice,
+                                ),
+                            )
+                            .await;
+                    }
+                }
+                let oauth_id = match &op {
+                    crate::session::provider_command::ProviderOp::Oauth { id, .. } => id.clone(),
+                    _ => String::new(),
+                };
+                let mut ui = SlashUi {
+                    actor: self,
+                    provider_id: oauth_id,
+                };
+                let text = Box::pin(crate::session::provider_command::run_with_ui(
+                    &op,
+                    Some(&mut ui),
+                ))
+                .await;
                 self.send_host_turn_slash_command_output(&text).await;
                 ok_end_turn(0, None)
             }

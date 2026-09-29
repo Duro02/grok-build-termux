@@ -15,6 +15,7 @@ use crate::agent::config::Config;
 use anyhow::{Context, Result};
 use toml::Value as TomlValue;
 use toml::map::Map as TomlMap;
+use xai_grok_login::provider_oauth as po;
 
 /// Parsed `/provider` operation.
 #[derive(Debug)]
@@ -43,8 +44,24 @@ pub(crate) enum ProviderOp {
     },
     /// `/provider remove <id>` or `/provider remove <id> <model>`.
     Remove { id: String, model: Option<String> },
+    /// `/provider oauth <id> [device|code <input>|logout]` — built-in
+    /// browser/device sign-in for catalog providers that support OAuth.
+    Oauth { id: String, action: OauthAction },
     /// Usage (also the fallback for a parse error, which is carried here).
     Help { error: Option<String> },
+}
+
+#[derive(Debug)]
+pub(crate) enum OauthAction {
+    /// Start the flow: `Preferred` (browser, or device when the provider is
+    /// device-only) unless `device` forces the device path (Codex).
+    Login { device: bool },
+    /// `/provider oauth <id> code <input>` — paste the redirect URL or code
+    /// into an in-flight login (manual path when loopback can't receive it).
+    Code { input: String },
+    /// `/provider oauth <id> logout` — drop stored credentials and the
+    /// `auth` helper block written at sign-in.
+    Logout,
 }
 
 /// Optional `[model_providers.<id>]` fields collected from `add` flags.
@@ -65,6 +82,9 @@ Usage:
   /provider use <id>                         Activate a built-in provider without an env key
   /provider add <id> <base-url> [options]    Register a custom provider
   /provider key <id> <api-key>               Store a literal API key on a provider
+  /provider oauth <id> [device]              Sign in via browser/device OAuth (subscription login)
+  /provider oauth <id> code <input>          Feed a pasted redirect/code into a running login
+  /provider oauth <id> logout                Clear stored OAuth credentials
   /provider model <id> <model> [options]     Add a model to a provider
   /provider remove <id> [<model>]            Remove a provider or one of its models
 
@@ -200,6 +220,30 @@ fn parse_inner(args: &str) -> Result<ProviderOp, String> {
                 context_window,
             })
         }
+        "oauth" => {
+            let id = it
+                .next()
+                .ok_or("missing provider id: /provider oauth <id> [device|code <input>|logout]")?;
+            let action = match it.next() {
+                None | Some("login") => OauthAction::Login { device: false },
+                Some("device") => OauthAction::Login { device: true },
+                Some("code") => {
+                    let input = it
+                        .next()
+                        .ok_or("missing input: /provider oauth <id> code <redirect-url-or-code>")?;
+                    OauthAction::Code {
+                        input: input.to_string(),
+                    }
+                }
+                Some("logout") => OauthAction::Logout,
+                Some(other) => return Err(format!("unknown oauth action '{other}'")),
+            };
+            reject_flags(&mut it)?;
+            Ok(ProviderOp::Oauth {
+                id: id.to_string(),
+                action,
+            })
+        }
         "remove" | "rm" => {
             let id = it
                 .next()
@@ -316,13 +360,49 @@ fn parse_model_flags<'a>(
 
 /// Execute a parsed op and return the text to surface in the pager.
 pub(crate) async fn run(op: &ProviderOp) -> String {
-    match run_inner(op).await {
+    run_with_ui(op, None).await
+}
+
+/// `run` plus a mid-flow notice sink for `ProviderOp::Oauth` logins (device
+/// codes and authorize URLs must reach the user while the flow is running).
+pub(crate) async fn run_with_ui(
+    op: &ProviderOp,
+    ui: Option<&mut (dyn po::LoginUi + '_)>,
+) -> String {
+    match run_inner(op, ui).await {
         Ok(text) => text,
         Err(e) => format!("provider: {e:#}"),
     }
 }
 
-async fn run_inner(op: &ProviderOp) -> Result<String> {
+/// Render one [`po::LoginNotice`] as session output text (device code /
+/// authorize URL plus the manual-paste escape hatch).
+pub(crate) fn oauth_notice_text(provider_id: &str, notice: &po::LoginNotice) -> String {
+    match notice {
+        po::LoginNotice::DeviceCode {
+            verification_uri,
+            verification_uri_complete,
+            user_code,
+            expires_secs,
+        } => {
+            let mins = expires_secs.div_ceil(60);
+            let mut text = format!(
+                "Sign in: open {verification_uri} and enter code `{user_code}` (expires in {mins} min)."
+            );
+            if let Some(complete) = verification_uri_complete {
+                text.push_str(&format!("\nShortcut (code prefilled): {complete}"));
+            }
+            text
+        }
+        po::LoginNotice::AuthUrl { url, callback_hint } => format!(
+            "Open this URL to sign in:\n  {url}\n\
+             After approval it redirects to {callback_hint} — if nothing opens or the \
+             redirect fails, paste the redirected URL here with `/provider oauth {provider_id} code <url>`"
+        ),
+    }
+}
+
+async fn run_inner(op: &ProviderOp, ui: Option<&mut (dyn po::LoginUi + '_)>) -> Result<String> {
     match op {
         ProviderOp::List => list_text(),
         ProviderOp::Info { id } => info_text(id),
@@ -344,7 +424,185 @@ async fn run_inner(op: &ProviderOp) -> Result<String> {
             context_window,
         } => add_model(provider, model, name.as_deref(), *context_window).await,
         ProviderOp::Remove { id, model } => remove(id, model.as_deref()).await,
+        ProviderOp::Oauth { id, action } => oauth_op(id, action, ui).await,
     }
+}
+
+// ---------------------------------------------------------------------------
+// Built-in OAuth sign-in
+// ---------------------------------------------------------------------------
+
+async fn oauth_op(
+    id: &str,
+    action: &OauthAction,
+    ui: Option<&mut (dyn po::LoginUi + '_)>,
+) -> Result<String> {
+    match action {
+        OauthAction::Code { input } => {
+            po::deliver_manual_input(id, input.clone())?;
+            Ok(format!(
+                "pasted input delivered — the '{id}' sign-in continues in its original turn."
+            ))
+        }
+        OauthAction::Logout => oauth_logout(id).await,
+        OauthAction::Login { device } => oauth_login(id, *device, ui).await,
+    }
+}
+
+async fn oauth_login(
+    id: &str,
+    device: bool,
+    ui: Option<&mut (dyn po::LoginUi + '_)>,
+) -> Result<String> {
+    let Some(spec) = po::spec_for(id) else {
+        return Ok(format!(
+            "'{id}' has no built-in OAuth sign-in (supported: {}). \
+             `/provider key {id} <api-key>` stores an API key instead.",
+            po::oauth_ids().join(", ")
+        ));
+    };
+    let Some(ui) = ui else {
+        return Ok(
+            "OAuth sign-in must run in an interactive session — retry from the TUI.".to_string(),
+        );
+    };
+    let method = if device {
+        po::LoginMethod::Device
+    } else {
+        po::LoginMethod::Preferred
+    };
+    let creds = po::run_login(id, method, ui).await?;
+    write_oauth_provider(id, spec, &creds).await
+}
+
+/// Persist the `[model_providers.<id>]` block that makes the signed-in
+/// provider usable: `api_key` for permanent-key OAuth (OpenRouter), else an
+/// inline `auth` helper `{ oauth = "<id>" }` so requests mint through the
+/// stored credential.
+async fn write_oauth_provider(
+    id: &str,
+    spec: &'static po::OAuthSpec,
+    creds: &po::StoredCredential,
+) -> Result<String> {
+    let id_owned = id.to_string();
+    let api_key = creds.api_key.clone();
+    let account_id = creds.account_id.clone();
+    let bearer = spec.bearer;
+    let report = rmw_user_config(move |root| {
+        let table = providers_table(root)?;
+        let block = table
+            .entry(id_owned.clone())
+            .or_insert_with(|| TomlValue::Table(TomlMap::new()))
+            .as_table_mut()
+            .with_context(|| format!("[model_providers.{id_owned}] must be a table"))?;
+        match api_key {
+            Some(key) => {
+                block.insert("api_key".to_string(), TomlValue::String(key));
+            }
+            None => {
+                let mut auth = TomlMap::new();
+                auth.insert("oauth".to_string(), TomlValue::String(id_owned.clone()));
+                block.insert("auth".to_string(), TomlValue::Table(auth));
+                if bearer {
+                    block.insert(
+                        "auth_scheme".to_string(),
+                        TomlValue::String("bearer".to_string()),
+                    );
+                }
+            }
+        }
+        // Stable account binding for Codex; Anthropic OAuth needs the beta flag.
+        let mut header_writes: Vec<(&str, String)> = Vec::new();
+        if let Some(account) = account_id {
+            header_writes.push(("chatgpt-account-id", account));
+        }
+        if bearer && id_owned == "anthropic" {
+            header_writes.push(("anthropic-beta", "oauth-2025-04-20".to_string()));
+        }
+        if !header_writes.is_empty() {
+            let headers = block
+                .entry("extra_headers".to_string())
+                .or_insert_with(|| TomlValue::Table(TomlMap::new()))
+                .as_table_mut()
+                .with_context(|| {
+                    format!("[model_providers.{id_owned}].extra_headers must be a table")
+                })?;
+            for (k, v) in header_writes {
+                headers.insert(k.to_string(), TomlValue::String(v));
+            }
+        }
+        Ok(format!(
+            "signed in to '{id_owned}' — provider block written to config.toml"
+        ))
+    })
+    .await?;
+    Ok(format!(
+        "{report}\nTokens live in provider-auth.json and refresh automatically; \
+         `{id}` models are now active (Ctrl+M). `/provider oauth {id} logout` signs out."
+    ))
+}
+
+async fn oauth_logout(id: &str) -> Result<String> {
+    let had_creds = po::load_credentials(id).is_some();
+    po::clear_credentials(id)?;
+    let id_owned = id.to_string();
+    let report = rmw_user_config(move |root| {
+        let Some(block) = providers_table(root)?.get_mut(&id_owned) else {
+            return Ok(format!(
+                "provider '{id_owned}' has no config block — nothing to strip."
+            ));
+        };
+        let Some(block) = block.as_table_mut() else {
+            return Ok(format!(
+                "[model_providers.{id_owned}] is not a table — left untouched."
+            ));
+        };
+        let mut removed = Vec::new();
+        if block.remove("auth").is_some() {
+            removed.push("auth");
+        }
+        // An OAuth-written `api_key` (OpenRouter) belongs to the sign-in.
+        if po::spec_for(&id_owned).is_some_and(|s| matches!(s.refresh, po::RefreshStyle::ApiKey))
+            && block.remove("api_key").is_some()
+        {
+            removed.push("api_key");
+        }
+        if let Some(headers) = block
+            .get_mut("extra_headers")
+            .and_then(TomlValue::as_table_mut)
+        {
+            for k in ["chatgpt-account-id", "anthropic-beta"] {
+                if headers.remove(k).is_some() {
+                    removed.push(k);
+                }
+            }
+        }
+        if bearer_sign_in(&id_owned) {
+            block.remove("auth_scheme");
+        }
+        Ok(if removed.is_empty() {
+            format!("provider '{id_owned}': no OAuth-managed fields to strip.")
+        } else {
+            format!(
+                "provider '{id_owned}': removed {} from config.toml.",
+                removed.join(", ")
+            )
+        })
+    })
+    .await?;
+    Ok(format!(
+        "{}{report}",
+        if had_creds {
+            format!("cleared stored credentials for '{id}'. ")
+        } else {
+            format!("no stored credentials for '{id}'. ")
+        }
+    ))
+}
+
+/// `spec.bearer` without tripping on unknown ids.
+fn bearer_sign_in(id: &str) -> bool {
+    po::spec_for(id).is_some_and(|s| s.bearer)
 }
 
 fn load_cfg() -> Result<Config> {
@@ -411,6 +669,17 @@ fn info_text(id: &str) -> Result<String> {
     }
     if let Some(b) = &r.api_backend {
         out.push_str(&format!("  backend:  {}\n", backend_name(b)));
+    }
+    if let Some(spec) = po::spec_for(id) {
+        out.push_str(&format!(
+            "  oauth:    {} ({})",
+            spec.display_name,
+            if po::load_credentials(id).is_some() {
+                "signed in"
+            } else {
+                "not signed in"
+            }
+        ));
     }
     if !r.env_keys.is_empty() {
         let set: Vec<String> = r
@@ -760,6 +1029,46 @@ mod tests {
         assert!(matches!(
             parse("remove deepseek deepseek-chat"),
             ProviderOp::Remove { ref id, model: Some(ref m) } if id == "deepseek" && m == "deepseek-chat"
+        ));
+    }
+
+    #[test]
+    fn parse_oauth_actions() {
+        assert!(matches!(
+            parse("oauth anthropic"),
+            ProviderOp::Oauth {
+                ref id,
+                action: OauthAction::Login { device: false }
+            } if id == "anthropic"
+        ));
+        assert!(matches!(
+            parse("oauth openai-codex device"),
+            ProviderOp::Oauth {
+                ref id,
+                action: OauthAction::Login { device: true }
+            } if id == "openai-codex"
+        ));
+        assert!(matches!(
+            parse("oauth anthropic logout"),
+            ProviderOp::Oauth {
+                ref id,
+                action: OauthAction::Logout
+            } if id == "anthropic"
+        ));
+        assert!(matches!(
+            parse("oauth anthropic code 'http://localhost:53692/callback?code=x&state=y'"),
+            ProviderOp::Oauth {
+                ref id,
+                action: OauthAction::Code { ref input }
+            } if id == "anthropic" && input.contains("code=x")
+        ));
+        assert!(matches!(
+            parse("oauth"),
+            ProviderOp::Help { error: Some(_) }
+        ));
+        assert!(matches!(
+            parse("oauth anthropic bogus"),
+            ProviderOp::Help { error: Some(_) }
         ));
     }
 

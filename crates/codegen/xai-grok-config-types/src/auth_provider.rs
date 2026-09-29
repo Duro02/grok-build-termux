@@ -17,10 +17,14 @@ pub struct AuthProviderConfig {
     pub timeout_secs: Option<u64>,
     /// Working directory for the command; a leading `~` expands to home.
     pub cwd: Option<String>,
+    /// Built-in OAuth provider id (e.g. `"openai-codex"`); when set, the mint
+    /// path reads `<grok_home>/provider-auth.json` and refreshes in-process —
+    /// no helper command runs. Written by `/provider oauth <id>`.
+    pub oauth: Option<String>,
 }
 
 impl AuthProviderConfig {
     pub fn is_usable(&self) -> bool {
-        !self.command.trim().is_empty()
+        !self.command.trim().is_empty() || self.oauth.is_some()
     }
 }

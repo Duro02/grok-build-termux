@@ -44,6 +44,18 @@ pub(crate) fn auth_config_issues(
             "missing or empty command; models resolve with no credential".to_owned(),
         ));
     }
+    if let Some(oauth_id) = config.oauth.as_deref()
+        && !oauth_id.trim().is_empty()
+        && !xai_grok_login::provider_oauth::oauth_capable(oauth_id)
+    {
+        issues.push((
+            "oauth",
+            ConfigWarningKind::InvalidValue,
+            format!(
+                "unknown built-in OAuth provider \"{oauth_id}\"; models resolve with no credential"
+            ),
+        ));
+    }
     let skew = xai_grok_login::PROVIDER_TOKEN_EXPIRY_SKEW_SECS;
     if config.token_ttl_secs.is_some_and(|ttl| ttl <= skew) {
         issues.push((

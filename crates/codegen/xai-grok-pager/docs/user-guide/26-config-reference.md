@@ -79,6 +79,7 @@ User-level configuration lives in `$GROK_HOME/config.toml` (default `~/.grok/con
 | Key | Type / Values | Requirements | Managed | Details |
 | --- | --- | --- | --- | --- |
 | `auth_provider.<name>` | `table` | `yes` | `user` | Named credential helper used by `[model.<id>] auth_provider`. |
+| `auth_provider.<name>.oauth` | `string` | `yes` | `user` | Built-in OAuth provider id (`openai-codex`, `anthropic`, `github-copilot`, `kimi-coding`, `meta`, `openrouter`); mints tokens from `provider-auth.json` in-process — no `command` needed. Written by `/provider oauth <id>` as `[model_providers.<id>].auth = { oauth = "<id>" }`. |
 
 ### `auto_mode`
 

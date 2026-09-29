@@ -498,6 +498,7 @@ async fn aux_model_with_auth_provider_never_reroutes() {
             args: None,
             token_ttl_secs: Some(3600),
             timeout_secs: None,
+            oauth: None,
             cwd: None,
         },
     );
@@ -591,6 +592,7 @@ async fn web_search_with_auth_provider_requires_warm_cache() {
             args: None,
             token_ttl_secs: Some(3600),
             timeout_secs: None,
+            oauth: None,
             cwd: None,
         },
     );
@@ -891,6 +893,7 @@ fn parses_auth_provider_tables_and_model_reference() {
             args: Some(vec!["--scope".into(), "corp".into()]),
             token_ttl_secs: Some(3600),
             timeout_secs: Some(10),
+            oauth: None,
             cwd: None,
         })
     );
@@ -982,6 +985,7 @@ async fn resolve_credentials_serves_cached_provider_token() {
             args: None,
             token_ttl_secs: Some(3600),
             timeout_secs: None,
+            oauth: None,
             cwd: None,
         },
     );
@@ -1008,6 +1012,7 @@ async fn set_env_key_shadows_warm_provider_at_resolve_time() {
             args: None,
             token_ttl_secs: Some(3600),
             timeout_secs: None,
+            oauth: None,
             cwd: None,
         },
     );
@@ -1058,6 +1063,7 @@ fn prefetched_entry_provider_config_comes_from_trusted_tables_only() {
             args: None,
             token_ttl_secs: None,
             timeout_secs: None,
+            oauth: None,
             cwd: None,
         },
     );
