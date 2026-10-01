@@ -2,8 +2,6 @@
 
 use std::path::{Path, PathBuf};
 
-// ── Grok state directory ────────────────────────────────────────────────────
-
 /// Grok state directory (`$GROK_HOME` or `~/.grok`).
 pub(crate) fn grok_home() -> PathBuf {
     xai_grok_config::grok_home()
@@ -39,8 +37,6 @@ pub(crate) const DEVICE_DIRS: &[&str] = &[
     "/dev/fd",  // fd table (symlink to /proc/self/fd on Linux; a directory)
 ];
 
-// ── Temporary directories ───────────────────────────────────────────────────
-
 /// Temporary directories that need write access.
 ///
 /// On macOS, programs use both `/tmp` (symlink to `/private/tmp`) and `/private/var/folders/` (the real `TMPDIR` / `NSTemporaryDirectory()`).
@@ -68,8 +64,6 @@ pub(crate) fn temp_writable_paths() -> Vec<PathBuf> {
 
     paths
 }
-
-// ── Essential writable paths ────────────────────────────────────────────────
 
 /// Writable directory paths for the workspace profile (full `grok_home()` and temp).
 /// Device files are handled separately via `allow_file` in `to_capability_set_with_config`.
