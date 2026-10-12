@@ -470,6 +470,16 @@ pub(crate) fn default_palette_entries(
             command: PaletteCommand::SlashCommand("/model ".into()),
         },
         PaletteEntry {
+            label: "Model Providers".into(),
+            shortcut: "/provider".into(),
+            command: PaletteCommand::SlashCommand("/provider ".into()),
+        },
+        PaletteEntry {
+            label: "Log In / Provider Key".into(),
+            shortcut: "/login".into(),
+            command: PaletteCommand::SlashCommand("/login ".into()),
+        },
+        PaletteEntry {
             label: "Always Approve Mode".into(),
             shortcut: "/always-approve".into(),
             command: PaletteCommand::SlashCommand("/always-approve".into()),

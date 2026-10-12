@@ -101,3 +101,44 @@ fn arg_picker_chains_through_the_window_phase_to_effort() {
         "got {items:?}"
     );
 }
+
+/// Provider sign-in still chains through method choices and returns free-text
+/// API key entry to the composer after upstream added model window choices.
+#[test]
+fn login_picker_chains_then_prefills_api_key_prompt() {
+    let mut agent = make_agent();
+    let items = vec![crate::slash::command::ArgItem {
+        display: "OpenAI Codex".to_string(),
+        match_text: "openai-codex".to_string(),
+        insert_text: "openai-codex ".to_string(),
+        description: String::new(),
+    }];
+    agent.active_modal = Some(ActiveModal::ArgPicker {
+        command: "login".to_string(),
+        args_query: String::new(),
+        items: items.clone(),
+        original_items: items,
+        state: crate::views::picker::PickerState::input_active(),
+        previous_palette: None,
+        window: crate::views::modal_window::ModalWindowState::new(),
+    });
+    let enter = Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    agent.handle_arg_picker_input(&enter);
+    let Some(ActiveModal::ArgPicker {
+        args_query,
+        items,
+        state,
+        ..
+    }) = agent.active_modal.as_mut()
+    else {
+        panic!("expected the provider sign-in method picker");
+    };
+    assert_eq!(args_query, "openai-codex ");
+    state.selected = items
+        .iter()
+        .position(|item| item.insert_text == "openai-codex key ")
+        .expect("API key method must be offered");
+    agent.handle_arg_picker_input(&enter);
+    assert!(agent.active_modal.is_none());
+    assert_eq!(agent.prompt.text(), "/login openai-codex key ");
+}

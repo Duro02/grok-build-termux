@@ -5,6 +5,7 @@ use indexmap::IndexMap;
 use super::config::{ConfigModelOverride, EnvKeys};
 use super::config_model_override_parse::{ConfigWarning, ConfigWarningKind};
 use crate::sampling::ApiBackend;
+use xai_grok_sampler::AuthScheme;
 
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 #[serde(default)]
@@ -14,6 +15,8 @@ pub struct ModelProviderConfig {
     pub env_key: Option<EnvKeys>,
     pub api_key: Option<String>,
     pub api_backend: Option<ApiBackend>,
+    /// Credential header shape inherited by models (`bearer` or `x_api_key`).
+    pub auth_scheme: Option<AuthScheme>,
     pub extra_headers: IndexMap<String, String>,
     /// Query parameters folded into every request URL; inherited by models.
     pub query_params: IndexMap<String, String>,
@@ -40,6 +43,18 @@ pub(crate) fn auth_config_issues(
             "command",
             ConfigWarningKind::InvalidValue,
             "missing or empty command; models resolve with no credential".to_owned(),
+        ));
+    }
+    if let Some(oauth_id) = config.oauth.as_deref()
+        && !oauth_id.trim().is_empty()
+        && !xai_grok_login::provider_oauth::oauth_capable(oauth_id)
+    {
+        issues.push((
+            "oauth",
+            ConfigWarningKind::InvalidValue,
+            format!(
+                "unknown built-in OAuth provider \"{oauth_id}\"; models resolve with no credential"
+            ),
         ));
     }
     let skew = xai_grok_login::PROVIDER_TOKEN_EXPIRY_SKEW_SECS;
@@ -183,6 +198,7 @@ impl ConfigModelOverride {
             env_key,
             api_key,
             api_backend,
+            auth_scheme,
             extra_headers,
             query_params,
             env_http_headers,
@@ -198,6 +214,7 @@ impl ConfigModelOverride {
         merged.base_url = merged.base_url.or_else(|| base_url.clone());
         merged.api_base_url = merged.api_base_url.or_else(|| api_base_url.clone());
         merged.api_backend = merged.api_backend.or_else(|| api_backend.clone());
+        merged.auth_scheme = merged.auth_scheme.or(*auth_scheme);
         merged.max_request_bytes = merged.max_request_bytes.or(*max_request_bytes);
         // Inherited wholesale only when the model sets none of its own.
         if merged.context_window.is_none() && merged.context_windows.is_none() {
@@ -244,6 +261,35 @@ mod tests {
     use crate::agent::config::{
         Config, resolve_credentials, resolve_model_list, sampling_config_for_model,
     };
+    #[test]
+    fn provider_auth_and_context_windows_merge_without_clobbering_model_choices() {
+        use super::{ConfigModelOverride, ModelProviderConfig};
+        use xai_grok_sampler::AuthScheme;
+
+        let provider = ModelProviderConfig {
+            auth_scheme: Some(AuthScheme::XApiKey),
+            context_window: Some(100_000),
+            context_windows: Some(vec![
+                NonZeroU64::new(100_000).unwrap(),
+                NonZeroU64::new(400_000).unwrap(),
+            ]),
+            ..Default::default()
+        };
+        let inherited = ConfigModelOverride::default().with_provider_defaults(&provider, "gateway");
+        assert!(matches!(inherited.auth_scheme, Some(AuthScheme::XApiKey)));
+        assert_eq!(inherited.context_window, Some(100_000));
+        assert_eq!(inherited.context_windows, provider.context_windows);
+
+        let model = ConfigModelOverride {
+            context_windows: Some(vec![NonZeroU64::new(256_000).unwrap()]),
+            ..Default::default()
+        };
+        let merged = model.with_provider_defaults(&provider, "gateway");
+        assert!(matches!(merged.auth_scheme, Some(AuthScheme::XApiKey)));
+        assert_eq!(merged.context_window, None);
+        assert_eq!(merged.context_windows, model.context_windows);
+    }
+
     #[test]
     fn model_inherits_provider_connection_defaults() {
         let raw_config: toml::Value = toml::from_str(

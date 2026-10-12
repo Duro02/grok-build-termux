@@ -1,6 +1,7 @@
 pub mod activity;
 pub mod app;
 pub mod auth_method;
+pub(crate) mod builtin_providers;
 pub mod chat_modes;
 pub mod config;
 pub(crate) mod config_model_override_parse;

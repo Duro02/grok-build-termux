@@ -230,6 +230,18 @@ pub(super) const BUILTIN_COMMANDS: &[BuiltinCommand] = &[
         resolve: |_args| BuiltinAction::PluginsReload,
     },
     BuiltinCommand {
+        name: "provider",
+        description: "List or register model providers (pi-style custom providers)",
+        argument_hint: Some(
+            "[id] | use <id> | add <id> <url> [flags] | model <id> <model> | remove <id> [model] | key <id> <key>",
+        ),
+        aliases: &["providers"],
+        model_authored_eligibility: ModelAuthoredEligibility::Denied,
+        gate: BuiltinGate::AlwaysOn,
+        workflow_projection: WorkflowProjection::None,
+        resolve: |args| BuiltinAction::Provider(crate::session::provider_command::parse(args)),
+    },
+    BuiltinCommand {
         name: "session-info",
         description: "Show session details (model, turns, context usage)",
         argument_hint: None,
@@ -508,6 +520,7 @@ pub const PAGER_COMMAND_KEYS: &[&str] = &[
     "preferences",
     "prefs",
     "privacy",
+    "provider",
     "queue",
     "quit",
     "recap",
@@ -1262,6 +1275,7 @@ pub(super) enum BuiltinAction {
         name: String,
         input: String,
     },
+    Provider(crate::session::provider_command::ProviderOp),
 }
 impl BuiltinAction {
     pub(crate) fn command_name(&self) -> &'static str {
@@ -1295,6 +1309,7 @@ impl BuiltinAction {
             BuiltinAction::DeepResearch { .. } => "deep-research",
             BuiltinAction::WorkflowManage { .. } => "workflow",
             BuiltinAction::WorkflowLaunch { .. } => "workflow",
+            BuiltinAction::Provider(..) => "provider",
         }
     }
     pub(crate) fn args_provided(&self) -> bool {
@@ -1328,6 +1343,11 @@ impl BuiltinAction {
             BuiltinAction::DeepResearch { .. } => true,
             BuiltinAction::WorkflowManage { .. } => true,
             BuiltinAction::WorkflowLaunch { input, .. } => !input.is_empty(),
+            BuiltinAction::Provider(op) => !matches!(
+                op,
+                crate::session::provider_command::ProviderOp::List
+                    | crate::session::provider_command::ProviderOp::Help { error: None }
+            ),
         }
     }
 }

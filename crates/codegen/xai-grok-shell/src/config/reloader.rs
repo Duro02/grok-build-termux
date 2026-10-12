@@ -335,13 +335,19 @@ impl ConfigReloader {
                 .send(ConfigUpdate::Compat(Box::new(new_compat)));
         }
 
-        // Models: compare [model] (BYOK entries) and [models] (default, surprise) tables
+        // Models: compare [model] (BYOK entries), [models] (default, surprise) and
+        // [model_providers] (registered via /provider or hand-edited) tables.
         // Use toml::Value comparison (covers all fields including nested model entries).
         let old_model_table = self.last_global_config.get("model");
         let new_model_table = new_global.get("model");
         let old_models_table = self.last_global_config.get("models");
         let new_models_table = new_global.get("models");
-        if old_model_table != new_model_table || old_models_table != new_models_table {
+        let old_providers_table = self.last_global_config.get("model_providers");
+        let new_providers_table = new_global.get("model_providers");
+        if old_model_table != new_model_table
+            || old_models_table != new_models_table
+            || old_providers_table != new_providers_table
+        {
             info!("model config change detected");
             let _ = self.config_update_tx.send(ConfigUpdate::ModelsChanged);
         }

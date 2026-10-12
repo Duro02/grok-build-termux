@@ -11,6 +11,11 @@ use std::sync::LazyLock;
 /// It is `pub` because `xai_grok_shell::models` re-exports it and `agent::config` reads it.
 pub const DEFAULT_MODELS_JSON: &str = include_str!("../default_models.json");
 
+/// Built-in third-party provider catalog (pi-style), embedded at compile time.
+/// `xai_grok_shell::agent::builtin_providers` parses it and activates a provider
+/// when its API key environment variable is set or the user references it in config.
+pub const BUILTIN_PROVIDERS_JSON: &str = include_str!("../builtin_providers.json");
+
 #[derive(serde::Deserialize)]
 struct DefaultModels {
     default: String,

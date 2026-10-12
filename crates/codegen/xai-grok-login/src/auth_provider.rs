@@ -168,17 +168,29 @@ const PROVIDER_STDERR_CAP_BYTES: u64 = 64 << 10; // 64 KiB
 /// The table fields that shape the minted token; a cached token minted under a different set reads as stale, so a config edit re-mints.
 /// Destructured so a new `AuthProviderConfig` field is a compile error until it is classified.
 /// Token-shaping fields go here; an execution knob like `timeout_secs` never invalidates the cache.
-fn token_identity(
-    config: &AuthProviderConfig,
-) -> (&str, Option<&[String]>, Option<u64>, Option<&str>) {
+type TokenIdentity<'a> = (
+    &'a str,
+    Option<&'a [String]>,
+    Option<u64>,
+    Option<&'a str>,
+    Option<&'a str>,
+);
+fn token_identity(config: &AuthProviderConfig) -> TokenIdentity<'_> {
     let AuthProviderConfig {
         command,
         args,
         token_ttl_secs,
         timeout_secs: _,
         cwd,
+        oauth,
     } = config;
-    (command, args.as_deref(), *token_ttl_secs, cwd.as_deref())
+    (
+        command,
+        args.as_deref(),
+        *token_ttl_secs,
+        cwd.as_deref(),
+        oauth.as_deref(),
+    )
 }
 
 fn minted_token_is_stale(minted: &MintedProviderToken, config: &AuthProviderConfig) -> bool {
@@ -306,6 +318,21 @@ async fn mint_provider_token(
 
     let name = &provider.name;
     let config = &provider.config;
+
+    // Built-in OAuth path: `oauth = "<provider-id>"` mints from
+    // `provider-auth.json` in-process (refresh/exchange inside provider_oauth).
+    if let Some(oauth_id) = config.oauth.as_deref()
+        && !oauth_id.trim().is_empty()
+    {
+        let minted = crate::provider_oauth::mint(oauth_id).await?;
+        return Ok(MintedProviderToken {
+            token: minted.token,
+            refresh_token: None,
+            minted_at: std::time::Instant::now(),
+            expires_at: minted.expires_at,
+            minted_with: config.clone(),
+        });
+    }
     // Clamp to [1, ceiling]: the slot lock is held across the run
     // An unbounded timeout would let one hung helper stall every turn sharing this provider name
     // The ceiling is a hard bound, not just a parse warning
@@ -572,6 +599,7 @@ pub fn test_counting_provider(name: &str, dir: &std::path::Path) -> AuthProvider
             token_ttl_secs: Some(3600),
             timeout_secs: None,
             cwd: None,
+            oauth: None,
         },
     )
 }
