@@ -91,7 +91,7 @@ jobs:
             body="⚠️ The merge conflicts and needs manual resolution. Resolve locally, push to sync/upstream, and the build will re-run.$(printf '\n\n')$body"
           fi
           repo="${{ github.repository }}"
-          num=$(gh api "repos/$repo/pulls?head=sync/upstream&state=open" --jq '.[0].number // empty' 2>/dev/null || true)
+          num=$(gh api "repos/$repo/pulls?head=${{ github.repository_owner }}:sync/upstream&state=open" --jq '.[0].number // empty' 2>/dev/null || true)
           if [ -n "$num" ]; then
             gh api -X PATCH "repos/$repo/pulls/$num" -f title="$title" -f body="$body" --jq '.html_url'
           else

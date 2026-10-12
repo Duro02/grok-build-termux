@@ -25,6 +25,7 @@ pub struct ModelProviderConfig {
     pub auth_provider: Option<String>,
     pub auth: Option<xai_grok_config_types::AuthProviderConfig>,
     pub context_window: Option<u64>,
+    pub context_windows: Option<Vec<NonZeroU64>>,
     /// Request-body cap of this endpoint; inherited by models that set none of their own.
     pub max_request_bytes: Option<NonZeroU64>,
 }
@@ -204,6 +205,7 @@ impl ConfigModelOverride {
             auth_provider,
             auth,
             context_window,
+            context_windows,
             max_request_bytes,
         } = provider;
 
@@ -213,9 +215,12 @@ impl ConfigModelOverride {
         merged.api_base_url = merged.api_base_url.or_else(|| api_base_url.clone());
         merged.api_backend = merged.api_backend.or_else(|| api_backend.clone());
         merged.auth_scheme = merged.auth_scheme.or(*auth_scheme);
-        merged.context_window = merged.context_window.or(*context_window);
         merged.max_request_bytes = merged.max_request_bytes.or(*max_request_bytes);
         // Inherited wholesale only when the model sets none of its own.
+        if merged.context_window.is_none() && merged.context_windows.is_none() {
+            merged.context_window = *context_window;
+            merged.context_windows = context_windows.clone();
+        }
         if merged.extra_headers.is_empty() {
             merged.extra_headers = extra_headers.clone();
         }
@@ -256,6 +261,35 @@ mod tests {
     use crate::agent::config::{
         Config, resolve_credentials, resolve_model_list, sampling_config_for_model,
     };
+    #[test]
+    fn provider_auth_and_context_windows_merge_without_clobbering_model_choices() {
+        use super::{ConfigModelOverride, ModelProviderConfig};
+        use xai_grok_sampler::AuthScheme;
+
+        let provider = ModelProviderConfig {
+            auth_scheme: Some(AuthScheme::XApiKey),
+            context_window: Some(100_000),
+            context_windows: Some(vec![
+                NonZeroU64::new(100_000).unwrap(),
+                NonZeroU64::new(400_000).unwrap(),
+            ]),
+            ..Default::default()
+        };
+        let inherited = ConfigModelOverride::default().with_provider_defaults(&provider, "gateway");
+        assert!(matches!(inherited.auth_scheme, Some(AuthScheme::XApiKey)));
+        assert_eq!(inherited.context_window, Some(100_000));
+        assert_eq!(inherited.context_windows, provider.context_windows);
+
+        let model = ConfigModelOverride {
+            context_windows: Some(vec![NonZeroU64::new(256_000).unwrap()]),
+            ..Default::default()
+        };
+        let merged = model.with_provider_defaults(&provider, "gateway");
+        assert!(matches!(merged.auth_scheme, Some(AuthScheme::XApiKey)));
+        assert_eq!(merged.context_window, None);
+        assert_eq!(merged.context_windows, model.context_windows);
+    }
+
     #[test]
     fn model_inherits_provider_connection_defaults() {
         let raw_config: toml::Value = toml::from_str(
@@ -302,6 +336,7 @@ mod tests {
             [model_providers.gateway]
             base_url = "https://gateway.example/v1"
             context_window = 100000
+            context_windows = [100000, 400000]
 
             [model.override-url]
             model = "m"
@@ -317,6 +352,7 @@ mod tests {
         let model = resolved.get("override-url").expect("model should exist");
         assert_eq!(model.info.base_url, "https://model-specific.example/v1");
         assert_eq!(model.info.context_window.get(), 200000);
+        assert!(model.info.context_windows.is_empty());
     }
 
     #[test]

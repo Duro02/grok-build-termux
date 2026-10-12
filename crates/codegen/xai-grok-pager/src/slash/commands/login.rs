@@ -5,6 +5,8 @@
 //! and choosing one hands the prompt back for the key text, which is forwarded
 //! to the agent as `/provider key <id> <api-key>`.
 
+use xai_grok_config::{Capability, Distribution};
+
 use crate::app::actions::Action;
 use crate::slash::command::{
     AppCtx, ArgItem, CommandExecCtx, CommandResult, SlashCommand, slash_meta,
@@ -20,6 +22,11 @@ impl SlashCommand for LoginCommand {
         usage: "/login [<provider> [<api-key>]]",
         takes_args: true,
         arg_placeholder: "[<provider> [<api-key>]]",
+    }
+
+    /// Not offered where the build has no account; the router refuses a typed one.
+    fn visible(&self, _ctx: &AppCtx) -> bool {
+        Distribution::current().allows(Capability::AccountLogin)
     }
 
     fn suggest_args(&self, _ctx: &AppCtx, args_query: &str) -> Option<Vec<ArgItem>> {

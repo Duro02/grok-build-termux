@@ -216,8 +216,11 @@ fn merge_provider_over(base: &mut ModelProviderConfig, user: &ModelProviderConfi
     for (k, v) in &user.env_http_headers {
         base.env_http_headers.insert(k.clone(), v.clone());
     }
-    if user.context_window.is_some() {
+    // The scalar and selectable windows are one setting. A user override of
+    // either must not be combined with the catalog's other half.
+    if user.context_window.is_some() || user.context_windows.is_some() {
         base.context_window = user.context_window;
+        base.context_windows.clone_from(&user.context_windows);
     }
     if user.max_request_bytes.is_some() {
         base.max_request_bytes = user.max_request_bytes;
@@ -532,6 +535,34 @@ mod tests {
         let creds = resolve_credentials(model, Some("session-jwt"));
         assert_eq!(creds.api_key.as_deref(), Some("sk-ant-user"));
         assert_eq!(creds.base_url, "https://api.anthropic.com/v1");
+    }
+
+    #[test]
+    fn provider_window_choices_override_catalog_scalar() {
+        let mut base = ModelProviderConfig {
+            context_window: Some(200_000),
+            ..Default::default()
+        };
+        let windows = vec![
+            NonZeroU64::new(256_000).unwrap(),
+            NonZeroU64::new(500_000).unwrap(),
+        ];
+        let user = ModelProviderConfig {
+            context_windows: Some(windows.clone()),
+            ..Default::default()
+        };
+        merge_provider_over(&mut base, &user);
+        assert_eq!(base.context_window, None);
+        assert_eq!(base.context_windows, Some(windows));
+
+        // A later scalar-only override also clears inherited window choices.
+        let scalar = ModelProviderConfig {
+            context_window: Some(300_000),
+            ..Default::default()
+        };
+        merge_provider_over(&mut base, &scalar);
+        assert_eq!(base.context_window, Some(300_000));
+        assert_eq!(base.context_windows, None);
     }
 
     #[test]

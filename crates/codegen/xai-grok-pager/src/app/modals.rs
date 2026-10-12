@@ -18,14 +18,12 @@ use crate::theme::Theme;
 use crate::views::modal::{self, ActiveModal};
 
 impl AgentView {
-    /// `suggest_args` falls back to model rows when the query is not in effort phase.
-    /// Model-phase reasoning rows use a trailing space in `insert_text`; effort rows do not.
-    /// Require a non-empty list with no trailing-space rows before treating the picker as effort phase.
-    fn arg_items_look_like_effort_phase(items: &[crate::slash::command::ArgItem]) -> bool {
+    /// `suggest_args` falls back to model rows when `picked` is not a sub-phase; window and effort rows all extend it.
+    fn arg_items_extend_pick(items: &[crate::slash::command::ArgItem], picked: &str) -> bool {
         !items.is_empty()
-            && items
-                .iter()
-                .all(|item| !item.insert_text.ends_with(char::is_whitespace))
+            && items.iter().all(|item| {
+                item.insert_text.len() > picked.len() && item.insert_text.starts_with(picked)
+            })
     }
 
     /// Step the model ArgPicker from effort phase back to the model list.
@@ -651,9 +649,9 @@ impl AgentView {
                 InputOutcome::Changed
             }
             ArgPickerStep::Selected(item) => {
-                // `/provider` and `/login` chain through provider→verb menus whose
-                // items mix terminal and chainable insert_texts; `/model`'s effort
-                // phase is all-terminal, so the guard differs.
+                // `/provider` and `/login` chain through provider→verb menus.
+                // `/model` may chain through context-window and effort menus,
+                // whose rows must extend the selected prefix.
                 let staged_picker = matches!(command_clone.as_str(), "provider" | "login");
                 let chains_to_effort =
                     matches!(command_clone.as_str(), "model" | "m" | "provider" | "login")
@@ -671,7 +669,7 @@ impl AgentView {
                         })
                         .filter(|items| !items.is_empty())
                         .filter(|items| {
-                            staged_picker || Self::arg_items_look_like_effort_phase(items)
+                            staged_picker || Self::arg_items_extend_pick(items, &next_query)
                         });
                     if let Some(effort_items) = next_items
                         && let Some(cmd) =
@@ -1834,8 +1832,10 @@ impl AgentView {
             {
                 // Arg picker: ModalWindow chrome and picker content
                 let title = match command.as_str() {
-                    "model" | "m" if !args_query.is_empty() => "Pick reasoning effort",
-                    "model" | "m" => "Pick model",
+                    "model" | "m" => crate::slash::commands::model::picker_title(
+                        &self.session.models,
+                        args_query,
+                    ),
                     "theme" | "t" => "Pick theme",
                     _ => "Pick option",
                 };
